@@ -21,5 +21,8 @@ jobs:
     - name: Build
       run: cd cmd/plugin; go build -v ./...
 
+    - name: ls
+      run: cd cmd/plugin; ls -l plugin
+
     - name: Test
       run: cd cmd/plugin; go test -v ./...
