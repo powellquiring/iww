@@ -1,2 +1,2 @@
 doit:
-	go build -o iww
+	go build ./...

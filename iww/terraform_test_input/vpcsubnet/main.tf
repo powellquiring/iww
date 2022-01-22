@@ -112,18 +112,24 @@ resource "ibm_is_network_acl_rule" "main" {
   destination    = "0.0.0.0/0"
   direction      = "inbound"
 }
+
+
+/*
 resource "ibm_is_security_group_network_interface_attachment" "main" {
     security_group    = "2d364f0a-a870-42c3-a554-000001352417"
   network_interface = "6d6128aa-badc-45c4-bb0e-7c2c1c47be55"
 
 }
+*/
 resource "ibm_is_subnet_network_acl_attachment" "main" {
-    subnet      = ibm_is_subnet.testacc_subnet.id
-  network_acl = ibm_is_network_acl.isExampleACL.id
+    subnet      = ibm_is_subnet.front[0].id
+  network_acl = ibm_is_network_acl.main.id
 
 }
+/*
 resource "ibm_is_subnet_reserved_ip" "main" {
-          subnet = ibm_is_subnet.subnet1.id
+          subnet = ibm_is_subnet.front[0].id
         name = "my-subnet-reserved-ip1"
         target = ibm_is_virtual_endpoint_gateway.endpoint_gateway.id
 }
+*/

@@ -1,3 +1,3 @@
 doit:
-	go build iww.go
-	ibmcloud plugin install -f iww
+	go build ./...
+	ibmcloud plugin install -f plugin
