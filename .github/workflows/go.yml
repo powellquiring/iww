@@ -26,3 +26,9 @@ jobs:
 
     - name: Test
       run: cd cmd/plugin; go test -v ./...
+
+    - name: Upload output file
+      uses: actions/upload-artifact@v2
+      with:
+        name: iww-linux-amd64
+        path: plugin/iww

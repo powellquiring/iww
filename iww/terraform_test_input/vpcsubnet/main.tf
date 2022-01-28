@@ -114,7 +114,7 @@ resource "ibm_is_network_acl_rule" "main" {
 }
 
 
-/*
+/* TODO
 resource "ibm_is_security_group_network_interface_attachment" "main" {
     security_group    = "2d364f0a-a870-42c3-a554-000001352417"
   network_interface = "6d6128aa-badc-45c4-bb0e-7c2c1c47be55"
@@ -126,7 +126,7 @@ resource "ibm_is_subnet_network_acl_attachment" "main" {
   network_acl = ibm_is_network_acl.main.id
 
 }
-/*
+/* TODO
 resource "ibm_is_subnet_reserved_ip" "main" {
           subnet = ibm_is_subnet.front[0].id
         name = "my-subnet-reserved-ip1"
