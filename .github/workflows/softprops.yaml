@@ -9,7 +9,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Build
-        run: echo ${{ github.sha }} > Release.txt
+        run: |
+          echo ${{ github.sha }} > Release.txt
+          cd cmd/plugin
+          make
       - name: Test
         run: cat Release.txt
       - name: Release
@@ -19,3 +22,6 @@ jobs:
           files: |
             Release.txt
             LICENSE
+            cmd/plugin/iww-plugin-darwin-amd64
+            cmd/plugin/iww-plugin-linux-amd64
+            cmd/plugin/iww-plugin-windows-amd64
