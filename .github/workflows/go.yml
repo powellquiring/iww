@@ -22,6 +22,8 @@ jobs:
       run: |
         cd cmd/plugin
         go build -v ./...
+        x=y
+        echo $x
 
     - name: ls
       run: cd cmd/plugin; ls -l plugin
