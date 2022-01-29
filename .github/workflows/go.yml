@@ -19,7 +19,9 @@ jobs:
         go-version: 1.17
 
     - name: Build
-      run: cd cmd/plugin; go build -v ./...
+      run |
+        cd cmd/plugin
+        go build -v ./...
 
     - name: ls
       run: cd cmd/plugin; ls -l plugin
