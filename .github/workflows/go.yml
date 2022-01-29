@@ -19,11 +19,7 @@ jobs:
         go-version: 1.17
 
     - name: Build
-      run: |
-        cd cmd/plugin
-        go build -v ./...
-        x=y
-        echo $x
+      run: bash -x ./build.sh
 
     - name: ls
       run: cd cmd/plugin; ls -l plugin
