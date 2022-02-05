@@ -1,4 +1,10 @@
 #!/bin/bash
+set -ex
+pwd
+ls -l
+echo ${{ github.sha }} > Release.txt
+exit 0
+
 function build {
   FILENAME=extra-$1-$2
   echo "Building ${FILENAME}"
