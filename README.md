@@ -1,6 +1,6 @@
 # iww
 ibm cli with a world wide view of resources, list (ls), remove (rm)
-## iww cli
+## iww install
 A release is currently not available, you will need to build it, sorry.
 If you would rather use the `ibmcloud` cli see [Plugin](#Plugin) below
 ### Build
