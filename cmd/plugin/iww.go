@@ -151,9 +151,9 @@ func (p *IwwPlugin) GetMetadata() plugin.PluginMetadata {
 	return plugin.PluginMetadata{
 		Name: "iww",
 		Version: plugin.VersionType{
-			Major: 0,
+			Major: 1,
 			Minor: 0,
-			Build: 3,
+			Build: 5,
 		},
 		Commands: []plugin.Command{
 			{
