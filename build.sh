@@ -2,7 +2,7 @@
 set -ex
 pwd
 ls -l
-echo ${{ github.sha }} > Release.txt
+echo $GITHUB_SHA > Release.txt
 exit 0
 
 function build {
