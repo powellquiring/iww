@@ -10,7 +10,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Build
-        run: pwd; ls -l; echo ${{ github.sha }} > Release.txt
+        run: ./build.sh
       - name: Test
         run: cat Release.txt
       - name: Latest
