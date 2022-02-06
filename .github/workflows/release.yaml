@@ -20,6 +20,8 @@ jobs:
           files: |
             Release.txt
             LICENSE
+            cmd/plugin/iww-plugin-*
+            cmd/iww/iww-*
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
@@ -27,7 +29,8 @@ jobs:
           files: |
             Release.txt
             LICENSE
-
+            cmd/plugin/iww-plugin-*
+            cmd/iww/iww-*
 
 #name: Main
 #
