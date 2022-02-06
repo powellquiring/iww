@@ -1,8 +1,70 @@
 # iww
 ibm cli with a world wide view of resources, list (ls), remove (rm)
 ## iww install
-A release is currently not available, you will need to build it, sorry.
-If you would rather use the `ibmcloud` cli see [Plugin](#Plugin) below
+The [latest](https://github.com/powellquiring/iww/releases/tag/latest) release are probably good.  They are versioned so look it up first and copy/paste.
+
+On a mac:
+```
+ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-darwin-amd64-1.0.5
+```
+### Usage   
+Then to use the plugin see the help:
+
+```
+plugin $ ibmcloud iww
+NAME:
+   iww - ibm cloud world wide operations on existing resources
+
+USAGE:
+   iww [global options] command [command options] [arguments...]
+
+COMMANDS:
+   ls       list matching resources
+   rm       remove resources
+   help, h  Shows a list of commands or help for one command
+
+GLOBAL OPTIONS:
+   --help, -h  show help (default: false)
+plugin $ ibmcloud iww ls --help
+NAME:
+   iww ls - list matching resources
+
+USAGE:
+   iww ls [command options] [arguments...]
+
+OPTIONS:
+   --fast                       fast as possible do not read resource specific attributes (default: false)
+   --all-resource-groups, --ag  all resource groups not just the one configured (try: ibmcloud target) (default: false)
+   --all-regions, --ar          all regions not just the one configured (try: ibmcloud target) (default: false)
+   --help, -h                   show help (default: false)
+
+plugin $ ibmcloud iww rm --help
+NAME:
+   iww rm - remove resources
+
+USAGE:
+   iww rm [command options] [arguments...]
+
+OPTIONS:
+   --all-regions, --ar  all regions not just the one configured (try: ibmcloud target) (default: false)
+   --help, -h           show help (default: false)
+```
+
+If you execute `ls` first you can see the resources, then `rm` will remove them.  Here is an example ls:
+
+```
+iww $ ibmcloud iww ls --all-regions
+#Resource instances
+# b6503f25836d49029966ab5be7fe50b5 ( default )
+internet-svcs  cis-master - crn:v1:bluemix:public:internet-svcs:global:a/713c783d9a507a53135fe6793c37cc74:142daab2-b230-4b6b-9d6c-16c89e28a2a0::
+container-registry  Container Registry - crn:v1:bluemix:public:container-registry:eu-gb:a/713c783d9a507a53135fe6793c37cc74:0c0ebc03-b935-5040-b705-184508b89959::
+security-advisor security-advisor Security Advisor - crn:v1:bluemix:public:security-advisor:us-south:a/713c783d9a507a53135fe6793c37cc74:518cd470-038f-51bc-82fe-40311764930a:security-advisor:518cd470-038f-51bc-82fe-40311764930a
+security-advisor security-advisor Security Advisor - crn:v1:bluemix:public:security-advisor:eu-gb:a/713c783d9a507a53135fe6793c37cc74:d8db1d99-c1dc-59ab-900a-184b80ffeaee:security-advisor:d8db1d99-c1dc-59ab-900a-184b80ffeaee
+cloud-object-storage  account - crn:v1:bluemix:public:cloud-object-storage:global:a/713c783d9a507a53135fe6793c37cc74:5be9fe5f-96aa-4c85-9667-c829cd01534e::
+container-registry  Container Registry - crn:v1:bluemix:public:container-registry:au-syd:a/713c783d9a507a
+...
+```
+
 ### Build
 ```
 git clone https://github.com/powellquiring/iww
@@ -62,49 +124,6 @@ cd plugin/
 make
 ```
 
-### Usage
-Then to use the plugin see the help:
-
-```
-plugin $ ibmcloud iww
-NAME:
-   iww - ibm cloud world wide operations on existing resources
-
-USAGE:
-   iww [global options] command [command options] [arguments...]
-
-COMMANDS:
-   ls       list matching resources
-   rm       remove resources
-   help, h  Shows a list of commands or help for one command
-
-GLOBAL OPTIONS:
-   --help, -h  show help (default: false)
-plugin $ ibmcloud iww ls --help
-NAME:
-   iww ls - list matching resources
-
-USAGE:
-   iww ls [command options] [arguments...]
-
-OPTIONS:
-   --fast                       fast as possible do not read resource specific attributes (default: false)
-   --all-resource-groups, --ag  all resource groups not just the one configured (try: ibmcloud target) (default: false)
-   --all-regions, --ar          all regions not just the one configured (try: ibmcloud target) (default: false)
-   --help, -h                   show help (default: false)
-
-plugin $ ibmcloud iww rm --help
-NAME:
-   iww rm - remove resources
-
-USAGE:
-   iww rm [command options] [arguments...]
-
-OPTIONS:
-   --all-regions, --ar  all regions not just the one configured (try: ibmcloud target) (default: false)
-   --help, -h           show help (default: false)
-```
-
 ## Testing
 In progress, not ready for general consumption, sorry ....
 ```
@@ -112,6 +131,13 @@ export TF_VAR_x=y
 go test -v ./...
 ```
 
+# Releease
+At the beginning of a new release update the version in 
+- Update version in plugin cmd/plugin/iww.go, example 1.0.6
+- git push - **latest** github release will be built
+- tag=v1.0.6 ; git tag $tag ; git push origin $tag; #happy with the latest release, make it official
+
+- 
 # Problems
 ## Issues with this code
 File issues in this repository
