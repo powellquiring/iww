@@ -365,7 +365,7 @@ func (s *KeyprotectServiceOpertions) Destroy(si *ResourceInstanceWrapper) {
 			}
 		}
 		for _, key := range keys {
-			delKey, err := client.DeleteKey(context.Background(), key.ID, kp.ReturnRepresentation)
+			delKey, err := client.DeleteKey(context.Background(), key.ID, kp.ReturnRepresentation, kp.ForceOpt{Force: true})
 			if err != nil {
 				log.Print("KeyprotectServiceOpertions error while deleting the key: ", err)
 			} else {
