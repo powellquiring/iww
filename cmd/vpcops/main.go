@@ -24,6 +24,7 @@ var VpcSubtypeOperationsMap = []subtypeToBasename{
 	{"security-group", "SecurityGroup"},
 	{"flow-log-collector", "FlowLogCollector"},
 	{"instance-group", "InstanceGroup"},
+	{"snapshot", "Snapshot"},
 	// {"vpn", "VPNGateway"},
 	// {"instance-template", "InstanceTemplate"},
 }

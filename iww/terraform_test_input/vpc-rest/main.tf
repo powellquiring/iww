@@ -76,6 +76,12 @@ resource "ibm_is_instance" "front" {
   tags = local.tags
 }
 
+resource "ibm_is_snapshot" "frontsnap" {
+  name          = ibm_is_instance.front.name
+  source_volume = ibm_is_instance.front.volume_attachments[0].volume_id
+}
+
+
 ##################### rest
 /** TODO
 resource "ibm_is_instance_network_interface" "main" {

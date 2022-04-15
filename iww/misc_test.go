@@ -9,6 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestRmtmp(t *testing.T) {
+	resourceGroupName := "tmp"
+	rmResourceGroup(t, resourceGroupName)
+}
+
+func TestRmSnaps(t *testing.T) {
+	resourceGroupName := "snaps"
+	rmResourceGroup(t, resourceGroupName)
+}
+
 func TestRm3tier(t *testing.T) {
 	resourceGroupName := "3tier"
 	rmResourceGroup(t, resourceGroupName)

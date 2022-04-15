@@ -262,6 +262,25 @@ func (spec VpcSpecificInstanceGroupInstance) Get(service *vpcv1.VpcV1, id string
 	}
 }
 
+type VpcSpecificSnapshotInstance struct{}
+
+func (vpc VpcSpecificSnapshotInstance) Destroy(service *vpcv1.VpcV1, id string) (interface{}, error) {
+	return service.DeleteSnapshot(service.NewDeleteSnapshotOptions(id))
+}
+
+func (spec VpcSpecificSnapshotInstance) Get(service *vpcv1.VpcV1, id string) (string, bool, interface{}, error) {
+	instance, response, err := service.GetSnapshot(service.NewGetSnapshotOptions(id))
+	if err == nil {
+		return *instance.Name, true, response, nil
+	} else {
+		if response != nil && response.StatusCode == 404 {
+			return "", false, response, nil
+		} else {
+			return "", false, response, err
+		}
+	}
+}
+
 var VpcSubtypeOperationsMap = map[string]VpcSubtypeOperations{
 	"vpc":                VpcSpecificVPCInstance{},
 	"subnet":             VpcSpecificSubnetInstance{},
@@ -276,4 +295,5 @@ var VpcSubtypeOperationsMap = map[string]VpcSubtypeOperations{
 	"security-group":     VpcSpecificSecurityGroupInstance{},
 	"flow-log-collector": VpcSpecificFlowLogCollectorInstance{},
 	"instance-group":     VpcSpecificInstanceGroupInstance{},
+	"snapshot":           VpcSpecificSnapshotInstance{},
 }

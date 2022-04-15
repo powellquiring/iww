@@ -124,12 +124,24 @@ cd plugin/
 make
 ```
 
+## Debugging
+```
+cp template.local.env local.env
+edit local.env
+source local.env
+code .
+```
+
 ## Testing
 In progress, not ready for general consumption, sorry ....
 ```
-export TF_VAR_x=y
+cp template.local.env local.env
+edit local.env
+source local.env
 go test -v ./...
 ```
+
+- terraform_test.go - calls terraform to create resources, then practices deleting them
 
 # Releease
 At the beginning of a new release update the version in 
