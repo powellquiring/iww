@@ -45,6 +45,8 @@ type Context struct {
 	accountID         string
 	region            string
 	resourceGroupName string
+	isType            bool   // only consider infrastructure services, vpc
+	vpcid             string // only consider is resources that match the vpcid (isType must be true)
 	resourceGroupID   string // initialized early can be trusted to be nil if no resource group provided
 	// the rest are initialized as needed and cached
 	iamClient                *iamidentityv1.IamIdentityV1
@@ -60,7 +62,7 @@ type Context struct {
 var GlobalContext *Context
 
 // return the cached context or create it the first time called
-func SetGlobalContext(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string) error {
+func SetGlobalContext(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) error {
 	if GlobalContext != nil {
 		return nil
 	}
@@ -99,6 +101,10 @@ func SetGlobalContext(apikey string, token string, accountID string, region stri
 	}
 	GlobalContext.resourceGroupName = resourceGroupName
 	GlobalContext.resourceGroupID = resourceGroupID
+	GlobalContext.vpcid = vpcid
+	if vpcid != "" {
+		GlobalContext.isType = true
+	}
 	return SetGlobalContextResourceGroupID()
 }
 
@@ -441,6 +447,18 @@ func operationsForWrappedResourceInstances(ri *ResourceInstanceWrapper) (Resourc
 	}
 }
 
+// pruneWrappedResourceInstancesByIs removes all non "is" resources from the list
+func pruneWrappedResourceInstancesByIs(wrappedResourceInstances []*ResourceInstanceWrapper) []*ResourceInstanceWrapper {
+	ret := make([]*ResourceInstanceWrapper, 0)
+	for _, ri := range wrappedResourceInstances {
+		crn := ri.crn
+		if crn.resourceType == "is" {
+			ret = append(ret, ri)
+		}
+	}
+	return ret
+}
+
 //------------------------------------
 // Global variable initialization section
 func (context *Context) getResourceControllerClient() (client *resourcecontrollerv2.ResourceControllerV2, err error) {
@@ -661,8 +679,11 @@ func ResourceInstances(service *resourcecontrollerv2.ResourceControllerV2, lrio 
 	return resourceInstances, nil
 }
 
-func List() ([]*ResourceInstanceWrapper, error) {
-	resourceControllerClient, err := MustGlobalContext().getResourceControllerClient()
+// ListExpandFastPruneAddOperations is the list from the RC, expanded to include extra instances not in RC
+// then fast prune (no fetching instances) then add operations
+func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
+	context := MustGlobalContext()
+	resourceControllerClient, err := context.getResourceControllerClient()
 	if err != nil {
 		return nil, err
 	}
@@ -686,12 +707,47 @@ func List() ([]*ResourceInstanceWrapper, error) {
 	}
 	wrappedResourceInstances = append(wrappedResourceInstances, vpcExtraInstances...)
 
+	if context.isType {
+		wrappedResourceInstances = pruneWrappedResourceInstancesByIs(wrappedResourceInstances)
+	}
+
 	for _, ri := range wrappedResourceInstances {
 		operations, err := operationsForWrappedResourceInstances(ri)
 		if err != nil {
 			return nil, err
 		}
 		ri.operations = operations
+	}
+
+	return wrappedResourceInstances, nil
+}
+
+// List is called from all commands (rm, ls, tst) to to find the list of resources that match the global context.
+// important the the set of resources for ls and rm are the same for good user experience
+// if fast do not fetch the instances
+func List(fast bool) ([]*ResourceInstanceWrapper, error) {
+	context := MustGlobalContext()
+	wrappedResourceInstances, err := ListExpandFastPruneAddOperations()
+	if err != nil {
+		return nil, err
+	}
+	if !fast {
+		// for some filtering, like vpcid, it is required to fetch.  To be consistent fetch now
+		ret := make([]*ResourceInstanceWrapper, 0)
+		for _, ri := range wrappedResourceInstances {
+			ri.Fetch()
+			if context.vpcid != "" {
+				// filter based on vpcid
+				if vpcOperations, ok := ri.operations.(VpcResourceInstanceOperations); ok {
+					if context.vpcid == vpcOperations.Vpcid() {
+						ret = append(ret, ri)
+					}
+				}
+			} else {
+				ret = append(ret, ri)
+			}
+		}
+		return ret, nil
 	}
 	return wrappedResourceInstances, nil
 }
@@ -704,6 +760,7 @@ func NewResourceInstanceWrapper(crn *Crn, resourceGroupID *string, name *string)
 	}
 }
 
+// Read the resource instances filtered by region if required
 func readResourceInstances(resourceControllerClient *resourcecontrollerv2.ResourceControllerV2) ([]*ResourceInstanceWrapper, error) {
 	context := MustGlobalContext()
 	lriOptions := resourceControllerClient.NewListResourceInstancesOptions()
@@ -785,20 +842,26 @@ func readResourceKeys(resourceControllerClient *resourcecontrollerv2.ResourceCon
 }
 
 // ls with apikey from iww command line
-func Ls(apikey, region string, resourceGroupName string, fast bool) error {
-	return LsCommon(apikey, "", "", region, resourceGroupName, "", fast)
+func Ls(apikey, region string, resourceGroupName string, vpcid string, fast bool) error {
+	return LsCommon(apikey, "", "", region, resourceGroupName, "", vpcid, fast)
 }
 
 // ls with context manager from ibmcloud cli
 func LsWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, fast bool) error {
-	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, fast)
+	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, "", fast) // todo vpcid
 }
 
-func LsCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, fast bool) error {
-	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID); err != nil {
+func LsCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool) error {
+	if vpcid != "" {
+		if fast {
+			return errors.New("fast and vpcid are not compatible")
+		}
+
+	}
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid); err != nil {
 		return err
 	}
-	wrappedResourceInstances, err := List()
+	wrappedResourceInstances, err := List(fast)
 	if err != nil {
 		return err
 	}
@@ -818,7 +881,6 @@ func lsOutput(wrappedResourceInstances []*ResourceInstanceWrapper, fast bool) er
 			if _, ok := ri.operations.(UnimplementedServiceOperations); ok {
 				unimplementedResourceInstances = append(unimplementedResourceInstances, ri)
 			} else {
-				ri.Fetch()
 				if ri.state == SIStateDeleted {
 					missingResourceInstances = append(missingResourceInstances, ri)
 				} else {
@@ -903,7 +965,7 @@ func RmServiceInstances(serviceInstances []*ResourceInstanceWrapper) error {
 
 // prune out the resources that are no longer in the resource controller
 func pruneResourcesThatDoNotExist(nextServiceInstances []*ResourceInstanceWrapper) []*ResourceInstanceWrapper {
-	resources, err := List()
+	resources, err := ListExpandFastPruneAddOperations() // assume if they are not in the RC they can be pruned
 	if err != nil {
 		log.Print("can not prune resources, err:", err)
 		return nextServiceInstances
@@ -929,27 +991,27 @@ func pruneResourcesThatDoNotExist(nextServiceInstances []*ResourceInstanceWrappe
 	return ret
 }
 
-func Rm(apikey, region string, resourceGroupName string, fileName string) error {
+func Rm(apikey, region string, resourceGroupName string, fileName string, vpcid string) error {
 	if fileName != "" {
-		log.Print("rm from file not suppor, fileName:", fileName)
+		log.Print("rm from file not supported, fileName:", fileName)
 		return nil
 	}
-	return RmCommon(apikey, "", "", region, resourceGroupName, "")
+	return RmCommon(apikey, "", "", region, resourceGroupName, "", vpcid)
 }
 
-func RmWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string) error {
-	return RmCommon("", token, accountID, region, resourceGroupName, resourceGroupID)
+func RmWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) error {
+	return RmCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid)
 }
 
-func RmCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string) error {
-	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID); err != nil {
+func RmCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) error {
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid); err != nil { // todo
 		return err
 	}
-	if resourceGroupName == "" && resourceGroupID == "" {
+	if resourceGroupName == "" && resourceGroupID == "" && vpcid == "" {
 		fmt.Print("Removing all resources not currently supported, select a resource group")
 		return nil
 	}
-	serviceInstances, err := List()
+	serviceInstances, err := List(false)
 	if err != nil {
 		return err
 	}
@@ -962,10 +1024,10 @@ func Tst(apikey, region string, resourceGroupName string) error {
 }
 
 func TstCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string) error {
-	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID); err != nil {
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, ""); err != nil { // todo
 		return err
 	}
-	serviceInstances, err := List()
+	serviceInstances, err := List(false)
 	if err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ func main() {
 	var resourceGroup string
 	var fileName string
 	var region string
+	var vpcid string
 	app := &cli.App{
 		Name:  "iww",
 		Usage: "ibm cloud world wide operations on existing resources",
@@ -48,9 +49,16 @@ func main() {
 						Required:    false,
 						Destination: &region,
 					},
+					&cli.StringFlag{
+						Name:        "vpcid",
+						Aliases:     []string{"v"},
+						Usage:       "restrict resources to be from one vpc id",
+						Required:    false,
+						Destination: &vpcid,
+					},
 				},
 				Action: func(c *cli.Context) error {
-					return iww.Ls(apikey, region, resourceGroup, c.Bool("fast"))
+					return iww.Ls(apikey, region, resourceGroup, vpcid, c.Bool("fast"))
 				},
 			},
 			{
@@ -77,9 +85,16 @@ func main() {
 						Required:    false,
 						Destination: &fileName,
 					},
+					&cli.StringFlag{
+						Name:        "vpcid",
+						Aliases:     []string{"v"},
+						Usage:       "restrict resources to be from one vpc id",
+						Required:    false,
+						Destination: &vpcid,
+					},
 				},
 				Action: func(c *cli.Context) error {
-					return iww.Rm(apikey, region, resourceGroup, fileName)
+					return iww.Rm(apikey, region, resourceGroup, fileName, vpcid)
 				},
 			},
 			{

@@ -18,3 +18,7 @@ resource "ibm_is_vpc" "location" {
   address_prefix_management = "manual"
   tags                      = local.tags
 }
+
+output vpcid {
+  value = ibm_is_vpc.location.id
+}

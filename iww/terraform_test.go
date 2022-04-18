@@ -1,30 +1,78 @@
 package iww
 
 import (
-	"io/ioutil"
+	"bytes"
+	"encoding/json"
+	"io"
+	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
-	"github.com/otiai10/copy"
 	"github.com/stretchr/testify/assert"
 )
 
-func execTerraformCommand(t *testing.T, tempDir string) (string, error) {
-	cmd := exec.Command("sh", "-c", "set -x; env|grep TF_VAR_; terraform version; cd "+tempDir+"; terraform init -no-color ; terraform apply -auto-approve -no-color")
-	stdoutStderr_b, err := cmd.CombinedOutput()
-	stdoutStderr := string(stdoutStderr_b)
-	return stdoutStderr, err
+func apikey() string {
+	return os.Getenv("TF_VAR_ibmcloud_api_key")
+}
+func resourceGroupName() string {
+	return os.Getenv("TF_VAR_resource_group_name")
+}
+
+func runCommand(dir, command string, arg ...string) (bytes.Buffer, error) {
+	var stdBuffer bytes.Buffer
+	mw := io.MultiWriter(os.Stdout, &stdBuffer)
+	cmd := exec.Command(command, arg...)
+	cmd.Dir = dir
+	cmd.Stdout = mw
+	cmd.Stderr = mw
+	err := cmd.Run()
+	return stdBuffer, err
+}
+func execTerraformOutput(dir string) (bytes.Buffer, error) {
+	return runCommand(dir, "sh", "-c", "terraform output -json")
+}
+func execTerraformApply(t *testing.T, tempDir string) (string, error) {
+	var stdBuffer bytes.Buffer
+	mw := io.MultiWriter(os.Stdout, &stdBuffer)
+	cmd := exec.Command("sh", "-c", "set -x; env|grep TF_VAR_; terraform version;terraform init -no-color ; terraform apply -auto-approve -no-color")
+	cmd.Dir = tempDir
+	cmd.Stdout = mw
+	cmd.Stderr = mw
+
+	if nottesting {
+		log.Println(stdBuffer.String())
+	}
+
+	err := cmd.Run()
+	return stdBuffer.String(), err
+}
+
+func listWithParams(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) ([]*ResourceInstanceWrapper, error) {
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid); err != nil {
+		return nil, err
+	}
+	return List(false)
 }
 
 func ListWithApikeyRegion(apikey, region string, resourceGroupName string) ([]*ResourceInstanceWrapper, error) {
-	if err := SetGlobalContext(apikey, "", "", region, resourceGroupName, ""); err != nil {
-		return nil, err
-	}
-	return List()
+	return listWithParams(apikey, "", "", region, resourceGroupName, "", "")
 }
+
 func ListWithApikey(apikey, resourceGroupName string) ([]*ResourceInstanceWrapper, error) {
 	return ListWithApikeyRegion(apikey, "", resourceGroupName)
+}
+
+var nottesting = false
+
+// testDirectory(dir) returns the directory, 'vpc
+func testDirectory(testDirectory string) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Panic("os.Getwd failed")
+	}
+	return cwd + "/terraform_test_input/" + testDirectory
 }
 
 func testTerraform(t *testing.T, testDirectory string) {
@@ -32,37 +80,91 @@ func testTerraform(t *testing.T, testDirectory string) {
 	cwd, err := os.Getwd()
 	assert.Nil(err)
 	t.Log("cwd", cwd)
-	tempDir, err := ioutil.TempDir("", "")
-	t.Log("tempDir", tempDir)
-	assert.Nil(err)
-	err = copy.Copy(cwd+"/terraform_test_input/"+testDirectory, tempDir)
-	assert.Nil(err)
-	outerr, err := execTerraformCommand(t, tempDir)
-	t.Logf("%s\n", outerr)
-	assert.Nil(err)
-	apikey := apikey()
-	resourceGroupName := resourceGroupName()
-	serviceInstances, err := ListWithApikey(apikey, resourceGroupName)
-	assert.Nil(err)
-	assert.NotZero(len(serviceInstances))
-	err = Rm(apikey, "", resourceGroupName, "")
-	assert.Nil(err)
-	serviceInstances, err = ListWithApikey(apikey, resourceGroupName)
-	assert.Nil(err)
-	assert.Zero(len(serviceInstances))
+	tempDir := cwd + "/terraform_test_input/" + testDirectory
+	outerr, err := execTerraformApply(t, tempDir)
+	if nottesting {
+		t.Logf("%s\n", outerr)
+		assert.Nil(err)
+		apikey := apikey()
+		resourceGroupName := resourceGroupName()
+		serviceInstances, err := ListWithApikey(apikey, resourceGroupName)
+		assert.Nil(err)
+		assert.NotZero(len(serviceInstances))
+		err = Rm(apikey, "", resourceGroupName, "", "")
+		assert.Nil(err)
+		serviceInstances, err = ListWithApikey(apikey, resourceGroupName)
+		assert.Nil(err)
+		assert.Zero(len(serviceInstances))
+	}
 }
 
-func rmResourceGroup(t *testing.T, resourceGroupName string) {
+// return the vpcid output string from the command: terraform output -json
+func terraformOutputVpcid(buffer bytes.Buffer) string {
+	type Anon_s struct {
+		Value string
+	}
+	type Vpcid_s struct {
+		Vpcid Anon_s
+	}
+	/*
+			{
+			"vpcid": {
+				"sensitive": false,
+				"type": "string",
+				"value": "r006-5f4d2ea3-fbf6-40f5-87b2-fce648b1c872"
+			}
+		}
+	*/
+	var vpcid Vpcid_s
+	json.Unmarshal(buffer.Bytes(), &vpcid)
+	return vpcid.Vpcid.Value
+}
+
+func terraformCleanup(dir string) {
+	tfFiles := []string{
+		".terraform",
+		".terraform.lock.hcl",
+		"terraform.tfstate",
+		"terraform.tfstate.backup",
+	}
+	for _, tfFile := range tfFiles {
+		if err := os.RemoveAll(filepath.Join(dir, tfFile)); err != nil {
+			print("failed to delete:", filepath.Join(dir, tfFile))
+		}
+	}
+}
+func TestTerraformVpc(t *testing.T) {
 	assert := assert.New(t)
-	apikey := apikey()
-	serviceInstances, err := ListWithApikey(apikey, resourceGroupName)
+	dir := testDirectory("vpc")
+	defer terraformCleanup(dir)
+	_, err := execTerraformApply(t, dir)
 	assert.Nil(err)
-	err = Rm(apikey, "", resourceGroupName, "")
-	serviceInstances, err = ListWithApikey(apikey, resourceGroupName)
+	// test ls and rm using vpcid.  the vpc terraform specifies just a vpc which creates a default acl and sg
+	serviceInstances, err := listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
+	assert.Len(serviceInstances, 3)
+	Rm(apikey(), "", resourceGroupName(), "", "")
+	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
 	assert.Len(serviceInstances, 0)
-	assert.Nil(err)
 }
 
+func TestTerraformVpcVpcid(t *testing.T) {
+	assert := assert.New(t)
+	dir := testDirectory("vpc")
+	defer terraformCleanup(dir)
+	_, err := execTerraformApply(t, dir)
+	assert.Nil(err)
+	buffer, err := execTerraformOutput(dir)
+	assert.Nil(err)
+	vpcid := terraformOutputVpcid(buffer)
+	// test ls and rm using vpcid.  the vpc test specifies just a vpc which creates a default acl and sg
+	serviceInstances, err := listWithParams(apikey(), "", "", "", "", "", vpcid)
+	assert.Len(serviceInstances, 3)
+	Rm(apikey(), "", "", "", vpcid)
+	serviceInstances, err = listWithParams(apikey(), "", "", "", "", "", vpcid)
+	assert.Len(serviceInstances, 0)
+}
+
+/*----------------
 func TestTerraformVpc(t *testing.T) {
 	testTerraform(t, "vpc")
 }
@@ -87,9 +189,4 @@ func TestTerraformResources(t *testing.T) {
 	testTerraform(t, "resources")
 }
 
-func apikey() string {
-	return os.Getenv("TF_VAR_ibmcloud_api_key")
-}
-func resourceGroupName() string {
-	return os.Getenv("TF_VAR_resource_group_name")
-}
+--------------------------------*/

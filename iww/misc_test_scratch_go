@@ -31,7 +31,7 @@ func TestRmNoCreate(t *testing.T) {
 
 func helpTestLs(t *testing.T, apikey, region, resourceGroupName string, fast bool) {
 	assert := assert.New(t)
-	err := Ls(apikey, region, resourceGroupName, fast)
+	err := Ls(apikey, region, resourceGroupName, "", fast)
 	assert.Nil(err)
 }
 func TestLsFast(t *testing.T) {
@@ -42,6 +42,21 @@ func TestLsFast(t *testing.T) {
 func TestLs(t *testing.T) {
 	apikey := apikey()
 	helpTestLs(t, apikey, "", "", false)
+}
+
+func TestLsVpcidByRG(t *testing.T) {
+	apikey := apikey()
+	resourceGroupName := resourceGroupName()
+	assert := assert.New(t)
+	err := Ls(apikey, "", resourceGroupName, "r006-2fe69b18-cfa3-46dd-8751-90dfbfef7fd9", false)
+	assert.Nil(err)
+}
+
+func TestLsVpcid(t *testing.T) {
+	apikey := apikey()
+	assert := assert.New(t)
+	err := Ls(apikey, "", "", "r006-2fe69b18-cfa3-46dd-8751-90dfbfef7fd9", false)
+	assert.Nil(err)
 }
 
 func TestLsDefaultGroupUssouth(t *testing.T) {
