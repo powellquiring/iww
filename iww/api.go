@@ -29,6 +29,7 @@ import (
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/schollz/progressbar/v3"
 )
 
 type Key struct {
@@ -48,6 +49,7 @@ type Context struct {
 	isType            bool   // only consider infrastructure services, vpc
 	vpcid             string // only consider is resources that match the vpcid (isType must be true)
 	resourceGroupID   string // initialized early can be trusted to be nil if no resource group provided
+	crn               string // todo testing
 	// the rest are initialized as needed and cached
 	iamClient                *iamidentityv1.IamIdentityV1
 	nameToResourceGroupID    map[string]string
@@ -695,7 +697,7 @@ func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
 	}
 	wrappedResourceInstances = append(wrappedResourceInstances, resourceInstances...)
 
-	serviceKeys, err := readResourceKeys(resourceControllerClient)
+	serviceKeys, err := readResourceKeys(resourceControllerClient, wrappedResourceInstances)
 	if err != nil {
 		return nil, err
 	}
@@ -722,6 +724,16 @@ func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
 	return wrappedResourceInstances, nil
 }
 
+const Verbose = true
+
+func pbar(max int64, description ...string) *progressbar.ProgressBar {
+	if Verbose {
+		return progressbar.Default(max, description...)
+	} else {
+		return progressbar.DefaultSilent(max, description...)
+	}
+}
+
 // List is called from all commands (rm, ls, tst) to to find the list of resources that match the global context.
 // important the the set of resources for ls and rm are the same for good user experience
 // if fast do not fetch the instances
@@ -731,10 +743,13 @@ func List(fast bool) ([]*ResourceInstanceWrapper, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !fast {
+		bar := pbar(int64(len(wrappedResourceInstances)))
 		// for some filtering, like vpcid, it is required to fetch.  To be consistent fetch now
 		ret := make([]*ResourceInstanceWrapper, 0)
 		for _, ri := range wrappedResourceInstances {
+			bar.Add(1)
 			ri.Fetch()
 			if context.vpcid != "" {
 				// filter based on vpcid
@@ -760,34 +775,50 @@ func NewResourceInstanceWrapper(crn *Crn, resourceGroupID *string, name *string)
 	}
 }
 
-// Read the resource instances filtered by region if required
+// readResourceInstance returns a slice containing one resource matching the provided crn
+func readResourceInstance(crn string) ([]resourcecontrollerv2.ResourceInstance, error) {
+	context := MustGlobalContext()
+	c := NewCrn(crn)
+	id := c.id
+
+	getResourceInstanceOptions := context.resourceControllerClient.NewGetResourceInstanceOptions(id)
+	resourceInstance, _, err := context.resourceControllerClient.GetResourceInstance(getResourceInstanceOptions)
+	if err != nil {
+		return nil, err
+	}
+	return []resourcecontrollerv2.ResourceInstance{*resourceInstance}, nil
+}
+
+// Read the resource instances filtered by resource group and region
 func readResourceInstances(resourceControllerClient *resourcecontrollerv2.ResourceControllerV2) ([]*ResourceInstanceWrapper, error) {
 	context := MustGlobalContext()
-	lriOptions := resourceControllerClient.NewListResourceInstancesOptions()
-	if context.resourceGroupID != "" {
-		lriOptions.SetResourceGroupID(context.resourceGroupID)
-	}
-	resourceInstances, err := ResourceInstances(resourceControllerClient, lriOptions)
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
+	var resourceInstances []resourcecontrollerv2.ResourceInstance
+	var err error
+	if context.crn != "" {
+		resourceInstances, err = readResourceInstance(context.crn)
+	} else {
+		// filter by resource group
+		lriOptions := resourceControllerClient.NewListResourceInstancesOptions()
+		if context.resourceGroupID != "" {
+			lriOptions.SetResourceGroupID(context.resourceGroupID)
+		}
+		resourceInstances, err = ResourceInstances(resourceControllerClient, lriOptions)
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
 	}
 
 	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
-	var lastErr error
 	for _, ri := range resourceInstances {
 		crn := NewCrn(*ri.CRN)
 		si := NewResourceInstanceWrapper(crn, ri.ResourceGroupID, ri.Name)
-		if err != nil {
-			lastErr = err
-			fmt.Println("BAD CRN:", *ri.CRN)
-		} else {
-			if context.region == "" || context.region == crn.region {
-				wrappedResourceInstances = append(wrappedResourceInstances, si)
-			}
+		// filter by region
+		if context.region == "" || context.region == crn.region {
+			wrappedResourceInstances = append(wrappedResourceInstances, si)
 		}
 	}
-	return wrappedResourceInstances, lastErr
+	return wrappedResourceInstances, nil
 }
 
 // Return the list of service keys matching the option
@@ -812,7 +843,8 @@ func ResourceKeys(service *resourcecontrollerv2.ResourceControllerV2, lrio *reso
 	return resourceKeys, nil
 }
 
-func readResourceKeys(resourceControllerClient *resourcecontrollerv2.ResourceControllerV2) ([]*ResourceInstanceWrapper, error) {
+// readResourceKeys will return wrapped keys for the resources in the list
+func readResourceKeys(resourceControllerClient *resourcecontrollerv2.ResourceControllerV2, justTheseResources []*ResourceInstanceWrapper) ([]*ResourceInstanceWrapper, error) {
 	context := MustGlobalContext()
 	lrkOptions := resourceControllerClient.NewListResourceKeysOptions()
 	if context.resourceGroupID != "" {
@@ -823,18 +855,25 @@ func readResourceKeys(resourceControllerClient *resourcecontrollerv2.ResourceCon
 		fmt.Println(err)
 		return nil, err
 	}
+	justTheseResourcesCrns := make(map[string]bool)
+	for _, justThisOne := range justTheseResources {
+		justTheseResourcesCrns[(*justThisOne.crn).Crn] = true
+	}
 
 	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
 	var lastErr error
-	for _, ri := range resourceKeys {
-		crn := NewCrn(*ri.CRN)
-		si := NewResourceInstanceWrapper(crn, ri.ResourceGroupID, ri.Name)
-		if err != nil {
-			lastErr = err
-			fmt.Println("BAD CRN:", *ri.CRN)
-		} else {
-			if context.region == "" || context.region == crn.region {
-				wrappedResourceInstances = append(wrappedResourceInstances, si)
+	for _, rk := range resourceKeys {
+		crn_s := *rk.CRN
+		if justTheseResourcesCrns[*rk.SourceCRN] {
+			crn := NewCrn(crn_s)
+			si := NewResourceInstanceWrapper(crn, rk.ResourceGroupID, rk.Name)
+			if err != nil {
+				lastErr = err
+				fmt.Println("BAD CRN:", crn_s)
+			} else {
+				if context.region == "" || context.region == crn.region {
+					wrappedResourceInstances = append(wrappedResourceInstances, si)
+				}
 			}
 		}
 	}

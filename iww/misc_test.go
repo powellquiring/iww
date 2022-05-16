@@ -2,12 +2,31 @@ package iww
 
 import (
 	"testing"
-	"time"
 
-	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
-	"github.com/IBM/vpc-go-sdk/vpcv1"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestLs(t *testing.T) {
+	assert := assert.New(t)
+	apikey := apikey()
+	err := SetGlobalContext(apikey, "", "", "", "", "", "")
+	assert.Nil(err)
+	context := MustGlobalContext()
+	context.crn = "crn:v1:bluemix:public:cloud-object-storage:global:a/713c783d9a507a53135fe6793c37cc74:1fd45853-1f6a-4c1c-aa43-9244d2644624::"
+	serviceInstances, err := List(false)
+	assert.Nil(err)
+	for _, si := range serviceInstances {
+		if rko, ok := si.operations.(*ResourceKeyOperations); ok {
+			if *rko.getResult.SourceCRN == context.crn {
+				print(rko)
+			}
+		}
+	}
+	assert.Len(serviceInstances, 1)
+
+}
+
+/*
 
 func TestRmtmp(t *testing.T) {
 	resourceGroupName := "tmp"
@@ -39,10 +58,6 @@ func TestLsFast(t *testing.T) {
 	helpTestLs(t, apikey, "", "", true)
 }
 
-func TestLs(t *testing.T) {
-	apikey := apikey()
-	helpTestLs(t, apikey, "", "", false)
-}
 
 func TestLsVpcidByRG(t *testing.T) {
 	apikey := apikey()
@@ -115,3 +130,5 @@ func createVpcAndWait(assert *assert.Assertions, service *vpcv1.VpcV1, name stri
 	}
 	return nil
 }
+
+*/

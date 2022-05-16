@@ -17,3 +17,7 @@ osarch-build:
 .PHONY: osarch-clean
 osarch-clean:
 	GOOS=$(GOOS) GOARCH=$(GOARCH) rm -f iww-$(GOOS)-$(GOARCH)
+
+
+tst:
+	$(MAKE) GOOS=darwin GOARCH=amd64 osarch-build

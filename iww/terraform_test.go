@@ -135,17 +135,21 @@ func terraformCleanup(dir string) {
 }
 func TestTerraformVpc(t *testing.T) {
 	assert := assert.New(t)
+	serviceInstances, err := listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
+	assert.Len(serviceInstances, 0)
 	dir := testDirectory("vpc")
 	defer terraformCleanup(dir)
-	_, err := execTerraformApply(t, dir)
+	_, err = execTerraformApply(t, dir)
 	assert.Nil(err)
 	// test ls and rm using vpcid.  the vpc terraform specifies just a vpc which creates a default acl and sg
-	serviceInstances, err := listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
+	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
 	assert.Len(serviceInstances, 3)
 	Rm(apikey(), "", resourceGroupName(), "", "")
 	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
 	assert.Len(serviceInstances, 0)
 }
+
+/*----------------
 
 func TestTerraformVpcVpcid(t *testing.T) {
 	assert := assert.New(t)
@@ -164,7 +168,6 @@ func TestTerraformVpcVpcid(t *testing.T) {
 	assert.Len(serviceInstances, 0)
 }
 
-/*----------------
 func TestTerraformVpc(t *testing.T) {
 	testTerraform(t, "vpc")
 }
