@@ -6,13 +6,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLs(t *testing.T) {
+func xTestLs(t *testing.T) {
 	assert := assert.New(t)
 	apikey := apikey()
 	err := SetGlobalContext(apikey, "", "", "", "", "", "")
 	assert.Nil(err)
 	context := MustGlobalContext()
-	context.crn = "crn:v1:bluemix:public:cloud-object-storage:global:a/713c783d9a507a53135fe6793c37cc74:1fd45853-1f6a-4c1c-aa43-9244d2644624::"
+	//context.crn = "crn:v1:bluemix:public:cloud-object-storage:global:a/713c783d9a507a53135fe6793c37cc74:1fd45853-1f6a-4c1c-aa43-9244d2644624::"
 	serviceInstances, err := List(false)
 	assert.Nil(err)
 	for _, si := range serviceInstances {

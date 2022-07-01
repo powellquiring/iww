@@ -75,29 +75,6 @@ func testDirectory(testDirectory string) string {
 	return cwd + "/terraform_test_input/" + testDirectory
 }
 
-func testTerraform(t *testing.T, testDirectory string) {
-	assert := assert.New(t)
-	cwd, err := os.Getwd()
-	assert.Nil(err)
-	t.Log("cwd", cwd)
-	tempDir := cwd + "/terraform_test_input/" + testDirectory
-	outerr, err := execTerraformApply(t, tempDir)
-	if nottesting {
-		t.Logf("%s\n", outerr)
-		assert.Nil(err)
-		apikey := apikey()
-		resourceGroupName := resourceGroupName()
-		serviceInstances, err := ListWithApikey(apikey, resourceGroupName)
-		assert.Nil(err)
-		assert.NotZero(len(serviceInstances))
-		err = Rm(apikey, "", resourceGroupName, "", "")
-		assert.Nil(err)
-		serviceInstances, err = ListWithApikey(apikey, resourceGroupName)
-		assert.Nil(err)
-		assert.Zero(len(serviceInstances))
-	}
-}
-
 // return the vpcid output string from the command: terraform output -json
 func terraformOutputVpcid(buffer bytes.Buffer) string {
 	type Anon_s struct {
@@ -133,20 +110,35 @@ func terraformCleanup(dir string) {
 		}
 	}
 }
-func TestTerraformVpc(t *testing.T) {
+func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances int) {
 	assert := assert.New(t)
 	serviceInstances, err := listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
 	assert.Len(serviceInstances, 0)
-	dir := testDirectory("vpc")
+	dir := testDirectory(directory)
 	defer terraformCleanup(dir)
 	_, err = execTerraformApply(t, dir)
 	assert.Nil(err)
 	// test ls and rm using vpcid.  the vpc terraform specifies just a vpc which creates a default acl and sg
 	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
-	assert.Len(serviceInstances, 3)
+
+	lenServiceInstances = len(serviceInstances)
+	assert.Greater(lenServiceInstances, 0)
 	Rm(apikey(), "", resourceGroupName(), "", "")
 	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
 	assert.Len(serviceInstances, 0)
+	return lenServiceInstances
+}
+
+/*----------------
+func TestTerraformVpc(t *testing.T) {
+	assert := assert.New(t)
+	lenServiceInstances := testTerraformDirectory(t, "vpc")
+	assert.Equal(lenServiceInstances, 3)
+}
+----------------*/
+
+func TestTerraformVpcsubnet(t *testing.T) {
+	testTerraformDirectory(t, "vpcsubnet")
 }
 
 /*----------------
@@ -166,10 +158,6 @@ func TestTerraformVpcVpcid(t *testing.T) {
 	Rm(apikey(), "", "", "", vpcid)
 	serviceInstances, err = listWithParams(apikey(), "", "", "", "", "", vpcid)
 	assert.Len(serviceInstances, 0)
-}
-
-func TestTerraformVpc(t *testing.T) {
-	testTerraform(t, "vpc")
 }
 
 func TestTerraformVpcsubnet(t *testing.T) {

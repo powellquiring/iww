@@ -81,7 +81,7 @@ resource "ibm_is_network_acl" "main" {
     name = "is-example-acl"
   vpc             = ibm_is_vpc.location.id
   rules {
-    name        = "outbound"
+    name        = "outbound-initial"
     action      = "allow"
     source      = "0.0.0.0/0"
     destination = "0.0.0.0/0"
@@ -92,7 +92,7 @@ resource "ibm_is_network_acl" "main" {
     }
   }
   rules {
-    name        = "inbound"
+    name        = "inbound-initial"
     action      = "allow"
     source      = "0.0.0.0/0"
     destination = "0.0.0.0/0"

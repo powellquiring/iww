@@ -20,6 +20,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/IBM/go-sdk-core/v5/core"
@@ -51,14 +52,19 @@ type Context struct {
 	resourceGroupID   string // initialized early can be trusted to be nil if no resource group provided
 	crn               string // todo testing
 	// the rest are initialized as needed and cached
-	iamClient                *iamidentityv1.IamIdentityV1
-	nameToResourceGroupID    map[string]string
-	IDToResourceGroupName    map[string]string
-	resourceManagerClient    *resourcemanagerv2.ResourceManagerV2
-	resourceControllerClient *resourcecontrollerv2.ResourceControllerV2
-	KeyProtectClients        map[Key]*kp.Client
-	TransitGatewayClient     *transitgatewayapisv1.TransitGatewayApisV1
-	VpcClients               map[ /*region*/ string]*vpcv1.VpcV1
+	iamClient                  *iamidentityv1.IamIdentityV1
+	IDToResourceGroupName      map[string]string
+	nameToResourceGroupID      map[string]string
+	nameToResourceGroupIDMutex sync.Mutex
+	resourceManagerClient      *resourcemanagerv2.ResourceManagerV2
+	resourceManagerClientMutex sync.Mutex
+	resourceControllerClient   *resourcecontrollerv2.ResourceControllerV2
+	KeyProtectClients          map[Key]*kp.Client
+	KeyProtectClientsMutex     sync.Mutex
+	TransitGatewayClient       *transitgatewayapisv1.TransitGatewayApisV1
+	TransitGatewayClientMutex  sync.Mutex
+	VpcClients                 map[ /*region*/ string]*vpcv1.VpcV1
+	VpcClientsMutex            sync.Mutex
 }
 
 var GlobalContext *Context
@@ -490,6 +496,8 @@ func (context *Context) getIamClient() (client *iamidentityv1.IamIdentityV1, err
 }
 
 func (context *Context) getResourceManagerClient() (resourceManagerClient *resourcemanagerv2.ResourceManagerV2, err error) {
+	defer context.resourceManagerClientMutex.Unlock()
+	context.resourceManagerClientMutex.Lock()
 	if context.resourceManagerClient != nil {
 		resourceManagerClient = context.resourceManagerClient
 	} else {
@@ -507,6 +515,8 @@ func ApiEndpoint(documentedApiEndpoint string, region string) string {
 }
 
 func (context *Context) getKeyProtectClient(crn *Crn) (*kp.Client, error) {
+	defer context.KeyProtectClientsMutex.Unlock()
+	context.KeyProtectClientsMutex.Lock()
 	region := crn.region
 	instanceId := crn.Crn
 	key := Key{region, instanceId}
@@ -534,6 +544,8 @@ func (context *Context) getKeyProtectClient(crn *Crn) (*kp.Client, error) {
 }
 
 func (context *Context) getVpcClient(crn *Crn) (service *vpcv1.VpcV1, err error) {
+	defer context.VpcClientsMutex.Unlock()
+	context.VpcClientsMutex.Lock()
 	region := crn.region
 	if context.VpcClients == nil {
 		context.VpcClients = make(map[string]*vpcv1.VpcV1, 0)
@@ -554,6 +566,8 @@ func (context *Context) getVpcClient(crn *Crn) (service *vpcv1.VpcV1, err error)
 }
 
 func (context *Context) getTransitGatewayClient(crn *Crn) (*transitgatewayapisv1.TransitGatewayApisV1, error) {
+	defer context.TransitGatewayClientMutex.Unlock()
+	context.TransitGatewayClientMutex.Lock()
 	if context.TransitGatewayClient != nil {
 		return context.TransitGatewayClient, nil
 	}
@@ -572,6 +586,8 @@ func (context *Context) getTransitGatewayClient(crn *Crn) (*transitgatewayapisv1
 }
 
 func (context *Context) readResourceGroupsInitializeMaps() error {
+	defer context.nameToResourceGroupIDMutex.Unlock()
+	context.nameToResourceGroupIDMutex.Lock()
 	if context.nameToResourceGroupID == nil {
 		groupOptions := &resourcemanagerv2.ListResourceGroupsOptions{
 			AccountID: &context.accountID,
@@ -724,7 +740,7 @@ func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
 	return wrappedResourceInstances, nil
 }
 
-const Verbose = true
+const Verbose = false
 
 func pbar(max int64, description ...string) *progressbar.ProgressBar {
 	if Verbose {
@@ -732,6 +748,11 @@ func pbar(max int64, description ...string) *progressbar.ProgressBar {
 	} else {
 		return progressbar.DefaultSilent(max, description...)
 	}
+}
+
+func fetchStoreResults(ri *ResourceInstanceWrapper, wg *sync.WaitGroup) {
+	defer wg.Done()
+	ri.Fetch()
 }
 
 // List is called from all commands (rm, ls, tst) to to find the list of resources that match the global context.
@@ -744,13 +765,23 @@ func List(fast bool) ([]*ResourceInstanceWrapper, error) {
 		return nil, err
 	}
 
-	if !fast {
+	if fast {
+		return wrappedResourceInstances, nil
+	} else {
+		fetchedRis := make([]*ResourceInstanceWrapper, len(wrappedResourceInstances))
+		var wg sync.WaitGroup
 		bar := pbar(int64(len(wrappedResourceInstances)))
 		// for some filtering, like vpcid, it is required to fetch.  To be consistent fetch now
-		ret := make([]*ResourceInstanceWrapper, 0)
-		for _, ri := range wrappedResourceInstances {
+		for index, ri := range wrappedResourceInstances {
+			fetchedRis[index] = ri
 			bar.Add(1)
-			ri.Fetch()
+			wg.Add(1)
+			time.Sleep(10 * time.Millisecond) // avoid rate limiting
+			go fetchStoreResults(ri, &wg)
+		}
+		wg.Wait()
+		ret := make([]*ResourceInstanceWrapper, 0)
+		for _, ri := range fetchedRis {
 			if context.vpcid != "" {
 				// filter based on vpcid
 				if vpcOperations, ok := ri.operations.(VpcResourceInstanceOperations); ok {
@@ -764,7 +795,6 @@ func List(fast bool) ([]*ResourceInstanceWrapper, error) {
 		}
 		return ret, nil
 	}
-	return wrappedResourceInstances, nil
 }
 
 func NewResourceInstanceWrapper(crn *Crn, resourceGroupID *string, name *string) *ResourceInstanceWrapper {
