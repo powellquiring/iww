@@ -119,8 +119,14 @@ It is in a loop trying to destroy resources until they no longer exist.  Althoug
 
 ## Plugin
 ### Build
+Make the plugin in the cwd on the mac and install it into ibmcloud cli
 ```
-cd plugin/
+cd cmd/plugin
+make plugin
+```
+
+Make the plugin for production:
+```
 make
 ```
 

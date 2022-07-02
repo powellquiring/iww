@@ -742,6 +742,8 @@ func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
 
 const Verbose = false
 
+const Async = true
+
 func pbar(max int64, description ...string) *progressbar.ProgressBar {
 	if Verbose {
 		return progressbar.Default(max, description...)
@@ -777,7 +779,11 @@ func List(fast bool) ([]*ResourceInstanceWrapper, error) {
 			bar.Add(1)
 			wg.Add(1)
 			time.Sleep(10 * time.Millisecond) // avoid rate limiting
-			go fetchStoreResults(ri, &wg)
+			if Async {
+				go fetchStoreResults(ri, &wg)
+			} else {
+				fetchStoreResults(ri, &wg)
+			}
 		}
 		wg.Wait()
 		ret := make([]*ResourceInstanceWrapper, 0)
@@ -916,8 +922,8 @@ func Ls(apikey, region string, resourceGroupName string, vpcid string, fast bool
 }
 
 // ls with context manager from ibmcloud cli
-func LsWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, fast bool) error {
-	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, "", fast) // todo vpcid
+func LsWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool) error {
+	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, fast) // todo vpcid
 }
 
 func LsCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool) error {

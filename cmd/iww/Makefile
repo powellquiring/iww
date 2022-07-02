@@ -18,6 +18,5 @@ osarch-build:
 osarch-clean:
 	GOOS=$(GOOS) GOARCH=$(GOARCH) rm -f iww-$(GOOS)-$(GOARCH)
 
-
-tst:
+mac:
 	$(MAKE) GOOS=darwin GOARCH=amd64 osarch-build

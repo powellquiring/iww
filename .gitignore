@@ -20,6 +20,7 @@ local.env
 .terraform
 .terraform.lock.hcl
 terraform.tfstate*
+.terraform*
 generated_key_rsa
 terraform_service_credentials.json
 cert

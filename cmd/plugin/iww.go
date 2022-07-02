@@ -70,6 +70,7 @@ func GetAuthenticator() (core.Authenticator, error) {
 }
 
 func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID string, args []string) {
+	var vpcid string
 	app := &cli.App{
 		Name:  "iww",
 		Usage: "ibm cloud world wide operations on existing resources",
@@ -92,6 +93,13 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 						Aliases: []string{"ar"},
 						Usage:   "all regions not just the one configured (try: ibmcloud target)",
 					},
+					&cli.StringFlag{
+						Name:        "vpcid",
+						Aliases:     []string{"v"},
+						Usage:       "restrict resources to be from one vpc id",
+						Required:    false,
+						Destination: &vpcid,
+					},
 				},
 				Action: func(c *cli.Context) error {
 					if c.Bool("all-resource-groups") {
@@ -101,7 +109,7 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 					if c.Bool("all-regions") {
 						region = ""
 					}
-					return iww.LsWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID, c.Bool("fast"))
+					return iww.LsWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID, vpcid, c.Bool("fast"))
 				},
 			},
 			{
@@ -113,12 +121,19 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 						Aliases: []string{"ar"},
 						Usage:   "all regions not just the one configured (try: ibmcloud target)",
 					},
+					&cli.StringFlag{
+						Name:        "vpcid",
+						Aliases:     []string{"v"},
+						Usage:       "restrict resources to be from one vpc id",
+						Required:    false,
+						Destination: &vpcid,
+					},
 				},
 				Action: func(c *cli.Context) error {
 					if c.Bool("all-regions") {
 						region = ""
 					}
-					return iww.RmWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID)
+					return iww.RmWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID, vpcid)
 				},
 			},
 		},
@@ -153,7 +168,7 @@ func (p *IwwPlugin) GetMetadata() plugin.PluginMetadata {
 		Version: plugin.VersionType{
 			Major: 1,
 			Minor: 0,
-			Build: 5,
+			Build: 6,
 		},
 		Commands: []plugin.Command{
 			{

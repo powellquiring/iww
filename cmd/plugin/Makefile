@@ -21,6 +21,8 @@ osarch-build:
 osarch-clean:
 	GOOS=$(GOOS) GOARCH=$(GOARCH) rm -f iww-plugin-$(GOOS)-$(GOARCH)-*
 
-plugin:
+# make and install the iww plugin on a mac
+.PHONY: mac
+mac: clean
 	$(MAKE) GOOS=darwin GOARCH=amd64 osarch-build
-	ibmcloud plugin install -f iww-plugin-darwin-amd64
+	ibmcloud plugin install -f iww-plugin-darwin-amd64-*

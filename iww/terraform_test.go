@@ -130,16 +130,26 @@ func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances
 }
 
 /*----------------
+// Test the environment variables that contain spikey and resource group name
+// This test works
+func TestListWithDefaults(t *testing.T) {
+	assert := assert.New(t)
+	_, err := ListWithApikey(apikey(), resourceGroupName())
+	assert.NoError(err)
+}
+----------------*/
+
 func TestTerraformVpc(t *testing.T) {
 	assert := assert.New(t)
 	lenServiceInstances := testTerraformDirectory(t, "vpc")
 	assert.Equal(lenServiceInstances, 3)
 }
-----------------*/
 
+/*----------------
 func TestTerraformVpcsubnet(t *testing.T) {
 	testTerraformDirectory(t, "vpcsubnet")
 }
+----------------*/
 
 /*----------------
 
