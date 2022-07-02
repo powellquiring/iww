@@ -122,7 +122,7 @@ It is in a loop trying to destroy resources until they no longer exist.  Althoug
 Make the plugin in the cwd on the mac and install it into ibmcloud cli
 ```
 cd cmd/plugin
-make plugin
+make mac
 ```
 
 Make the plugin for production:
@@ -137,6 +137,13 @@ edit local.env
 source local.env
 code .
 ```
+
+## IAM
+To read resource group names and then resources withing those groups:
+
+![image](https://user-images.githubusercontent.com/6932057/177010089-c4e414f7-043f-43f2-80db-6fb34c9ac18d.png)
+
+See https://github.com/powellquiring/iww/issues/7
 
 ## Testing
 In progress, not ready for general consumption, sorry ....
@@ -155,7 +162,8 @@ At the beginning of a new release update the version in
 - git push - **latest** github release will be built
 - tag=v1.0.6 ; git tag $tag ; git push origin $tag; #happy with the latest release, make it official
 
-- 
+Captured in `make tag`
+
 # Problems
 ## Issues with this code
 File issues in this repository
