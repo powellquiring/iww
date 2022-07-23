@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/IBM/go-sdk-core/v5/core"
 	kp "github.com/IBM/keyprotect-go-client"
+	"github.com/IBM/networking-go-sdk/dnssvcsv1"
 	"github.com/IBM/networking-go-sdk/transitgatewayapisv1"
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
@@ -57,14 +59,7 @@ type Context struct {
 	nameToResourceGroupID      map[string]string
 	nameToResourceGroupIDMutex sync.Mutex
 	resourceManagerClient      *resourcemanagerv2.ResourceManagerV2
-	resourceManagerClientMutex sync.Mutex
 	resourceControllerClient   *resourcecontrollerv2.ResourceControllerV2
-	KeyProtectClients          map[Key]*kp.Client
-	KeyProtectClientsMutex     sync.Mutex
-	TransitGatewayClient       *transitgatewayapisv1.TransitGatewayApisV1
-	TransitGatewayClientMutex  sync.Mutex
-	VpcClients                 map[ /*region*/ string]*vpcv1.VpcV1
-	VpcClientsMutex            sync.Mutex
 }
 
 var GlobalContext *Context
@@ -112,6 +107,10 @@ func SetGlobalContext(apikey string, token string, accountID string, region stri
 	GlobalContext.vpcid = vpcid
 	if vpcid != "" {
 		GlobalContext.isType = true
+	}
+	GlobalContext.resourceControllerClient, err = GlobalContext.getResourceControllerClient()
+	if err != nil {
+		return err
 	}
 	return SetGlobalContextResourceGroupID()
 }
@@ -470,44 +469,21 @@ func pruneWrappedResourceInstancesByIs(wrappedResourceInstances []*ResourceInsta
 //------------------------------------
 // Global variable initialization section
 func (context *Context) getResourceControllerClient() (client *resourcecontrollerv2.ResourceControllerV2, err error) {
-	if context.resourceControllerClient != nil {
-		client = context.resourceControllerClient
-	} else {
-		if client, err = resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
-			Authenticator: context.authenticator,
-		}); err == nil {
-			context.resourceControllerClient = client
-		}
-	}
-	return
+	return resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
+		Authenticator: context.authenticator,
+	})
 }
 
 func (context *Context) getIamClient() (client *iamidentityv1.IamIdentityV1, err error) {
-	if context.iamClient != nil {
-		client = context.iamClient
-	} else {
-		if client, err = iamidentityv1.NewIamIdentityV1UsingExternalConfig(&iamidentityv1.IamIdentityV1Options{
-			Authenticator: context.authenticator,
-		}); err == nil {
-			context.iamClient = client
-		}
-	}
-	return
+	return iamidentityv1.NewIamIdentityV1UsingExternalConfig(&iamidentityv1.IamIdentityV1Options{
+		Authenticator: context.authenticator,
+	})
 }
 
 func (context *Context) getResourceManagerClient() (resourceManagerClient *resourcemanagerv2.ResourceManagerV2, err error) {
-	defer context.resourceManagerClientMutex.Unlock()
-	context.resourceManagerClientMutex.Lock()
-	if context.resourceManagerClient != nil {
-		resourceManagerClient = context.resourceManagerClient
-	} else {
-		if resourceManagerClient, err = resourcemanagerv2.NewResourceManagerV2(&resourcemanagerv2.ResourceManagerV2Options{
-			Authenticator: context.authenticator,
-		}); err == nil {
-			context.resourceManagerClient = resourceManagerClient
-		}
-	}
-	return
+	return resourcemanagerv2.NewResourceManagerV2(&resourcemanagerv2.ResourceManagerV2Options{
+		Authenticator: context.authenticator,
+	})
 }
 
 func ApiEndpoint(documentedApiEndpoint string, region string) string {
@@ -515,75 +491,45 @@ func ApiEndpoint(documentedApiEndpoint string, region string) string {
 }
 
 func (context *Context) getKeyProtectClient(crn *Crn) (*kp.Client, error) {
-	defer context.KeyProtectClientsMutex.Unlock()
-	context.KeyProtectClientsMutex.Lock()
 	region := crn.region
-	instanceId := crn.Crn
-	key := Key{region, instanceId}
-	if context.KeyProtectClients == nil {
-		context.KeyProtectClients = make(map[Key]*kp.Client, 0)
+	config := kp.ClientConfig{
+		BaseURL:       ApiEndpoint("https://<region>.kms.cloud.ibm.com", region),
+		APIKey:        context.apikey,
+		Authorization: context.token,
+		TokenURL:      kp.DefaultTokenURL,
+		InstanceID:    crn.id,
+		Verbose:       kp.VerboseFailOnly,
 	}
-	if client, ok := context.KeyProtectClients[key]; ok {
-		return client, nil
-	} else {
-		config := kp.ClientConfig{
-			BaseURL:       ApiEndpoint("https://<region>.kms.cloud.ibm.com", region),
-			APIKey:        context.apikey,
-			Authorization: context.token,
-			TokenURL:      kp.DefaultTokenURL,
-			InstanceID:    crn.id,
-			Verbose:       kp.VerboseFailOnly,
-		}
-		if client, err := kp.New(config, kp.DefaultTransport()); err == nil {
-			context.KeyProtectClients[key] = client
-			return client, nil
-		} else {
-			return nil, err
-		}
-	}
+	return kp.New(config, kp.DefaultTransport())
 }
 
 func (context *Context) getVpcClient(crn *Crn) (service *vpcv1.VpcV1, err error) {
-	defer context.VpcClientsMutex.Unlock()
-	context.VpcClientsMutex.Lock()
 	region := crn.region
-	if context.VpcClients == nil {
-		context.VpcClients = make(map[string]*vpcv1.VpcV1, 0)
-	}
-	if client, ok := context.VpcClients[region]; ok {
-		return client, nil
-	} else {
-		if client, err = vpcv1.NewVpcV1(&vpcv1.VpcV1Options{
-			Authenticator: MustGlobalContext().authenticator,
-			URL:           ApiEndpoint("https://<region>.iaas.cloud.ibm.com/v1", region),
-		}); err == nil {
-			context.VpcClients[region] = client
-			return client, nil
-		} else {
-			return nil, err
-		}
-	}
+	return vpcv1.NewVpcV1(&vpcv1.VpcV1Options{
+		Authenticator: MustGlobalContext().authenticator,
+		URL:           ApiEndpoint("https://<region>.iaas.cloud.ibm.com/v1", region),
+	})
 }
 
 func (context *Context) getTransitGatewayClient(crn *Crn) (*transitgatewayapisv1.TransitGatewayApisV1, error) {
-	defer context.TransitGatewayClientMutex.Unlock()
-	context.TransitGatewayClientMutex.Lock()
-	if context.TransitGatewayClient != nil {
-		return context.TransitGatewayClient, nil
-	}
 	version := "2021-12-30"
 	options := &transitgatewayapisv1.TransitGatewayApisV1Options{
 		Version:       &version,
 		Authenticator: context.authenticator,
+		URL:           "https://transit.cloud.ibm.com/v1",
 	}
-	client, err := transitgatewayapisv1.NewTransitGatewayApisV1(options)
-	if err != nil {
-		return client, err
-	}
-	client.SetServiceURL("https://transit.cloud.ibm.com/v1")
-	context.TransitGatewayClient = client
-	return context.TransitGatewayClient, err
+	return transitgatewayapisv1.NewTransitGatewayApisV1(options)
+	// todo
+	// client.SetServiceURL("https://transit.cloud.ibm.com/v1")
 }
+
+func (context *Context) getDnssvcsClient() (client *dnssvcsv1.DnsSvcsV1, err error) {
+	return dnssvcsv1.NewDnsSvcsV1(&dnssvcsv1.DnsSvcsV1Options{
+		Authenticator: context.authenticator,
+	})
+}
+
+// done with clients
 
 func (context *Context) readResourceGroupsInitializeMaps() error {
 	defer context.nameToResourceGroupIDMutex.Unlock()
@@ -724,6 +670,12 @@ func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
 		return nil, err
 	}
 	wrappedResourceInstances = append(wrappedResourceInstances, vpcExtraInstances...)
+
+	wrappedDnsResources, err := readDnsResources(wrappedResourceInstances)
+	if err != nil {
+		return nil, err
+	}
+	wrappedResourceInstances = append(wrappedResourceInstances, wrappedDnsResources...)
 
 	if context.isType {
 		wrappedResourceInstances = pruneWrappedResourceInstancesByIs(wrappedResourceInstances)
@@ -977,17 +929,32 @@ func lsOutput(wrappedResourceInstances []*ResourceInstanceWrapper, fast bool) er
 	return nil
 }
 
+type RIWs []*ResourceInstanceWrapper
+
+func (ris RIWs) Len() int           { return len(ris) }
+func (ris RIWs) Swap(i, j int)      { ris[i], ris[j] = ris[j], ris[i] }
+func (ris RIWs) Less(i, j int) bool { return ris[i].crn.Crn < ris[j].crn.Crn }
+
 func PrintResourceInstances(context *Context, fast bool, wrappedResourceInstances []*ResourceInstanceWrapper) {
 	// Sort the instance by resource group
-	byResourceGroup := make(map[string][]*ResourceInstanceWrapper)
+	// byResourceGroup := make(map[string][]*ResourceInstanceWrapper)
+	byResourceGroup := make(map[string]RIWs)
+	groupIds := make([]string, 0)
 	for _, ri := range wrappedResourceInstances {
 		groupId := *ri.ResourceGroupID
 		if _, ok := byResourceGroup[groupId]; !ok {
-			byResourceGroup[groupId] = make([]*ResourceInstanceWrapper, 0)
+			// byResourceGroup[groupId] = make([]*ResourceInstanceWrapper, 0)
+			groupIds = append(groupIds, groupId)
+			byResourceGroup[groupId] = make(RIWs, 0)
 		}
 		byResourceGroup[groupId] = append(byResourceGroup[groupId], ri)
 	}
-	for groupId, ris := range byResourceGroup {
+	sort.Strings(groupIds)
+	for _, groupId := range groupIds {
+		// for groupId, ris := range byResourceGroup {
+		ris := byResourceGroup[groupId]
+		sort.Sort(ris)
+
 		fmt.Println("#", groupId, "(", context.getResourceGroupName(groupId, fast), ")")
 		for _, ri := range ris {
 			fmt.Println(ri.FormatInstance(fast))

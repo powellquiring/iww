@@ -4,9 +4,9 @@ go 1.17
 
 require (
 	github.com/IBM-Cloud/ibm-cloud-cli-sdk v0.8.1
-	github.com/IBM/go-sdk-core/v5 v5.7.0
+	github.com/IBM/go-sdk-core/v5 v5.8.0
 	github.com/IBM/keyprotect-go-client v0.7.0
-	github.com/IBM/networking-go-sdk v0.24.0
+	github.com/IBM/networking-go-sdk v0.30.0
 	github.com/IBM/platform-services-go-sdk v0.21.0
 	github.com/IBM/vpc-go-sdk v0.12.0
 )

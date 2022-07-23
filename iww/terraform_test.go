@@ -131,13 +131,29 @@ func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances
 
 /*----------------
 // Test the environment variables that contain spikey and resource group name
-// This test works
-func TestListWithDefaults(t *testing.T) {
+// This test works 7/2/2022
+----------------*/
+func TestListWithDefaultApikeyGroupName(t *testing.T) {
 	assert := assert.New(t)
 	_, err := ListWithApikey(apikey(), resourceGroupName())
 	assert.NoError(err)
 }
-----------------*/
+
+/*
+func TestRmWithDefaultApikeyGroupName(t *testing.T) {
+	Rm(apikey(), "", resourceGroupName(), "", "")
+}
+*/
+
+func TestListWithDefaultApikey(t *testing.T) {
+	assert := assert.New(t)
+	_, err := ListWithApikey(apikey(), "")
+	assert.NoError(err)
+}
+
+func TestTerraformVpcTgDns(t *testing.T) {
+	testTerraformDirectory(t, "vpc-tg-dns-iam")
+}
 
 func TestTerraformVpc(t *testing.T) {
 	assert := assert.New(t)
@@ -145,11 +161,21 @@ func TestTerraformVpc(t *testing.T) {
 	assert.Equal(lenServiceInstances, 3)
 }
 
-/*----------------
 func TestTerraformVpcsubnet(t *testing.T) {
 	testTerraformDirectory(t, "vpcsubnet")
 }
-----------------*/
+
+func TestTerraformVpc3tier(t *testing.T) {
+	testTerraformDirectory(t, "vpc3tier")
+}
+
+func TestTerraformRest(t *testing.T) {
+	testTerraformDirectory(t, "vpc-rest")
+}
+
+func TestTerraformResources(t *testing.T) {
+	testTerraformDirectory(t, "resources")
+}
 
 /*----------------
 
@@ -170,24 +196,5 @@ func TestTerraformVpcVpcid(t *testing.T) {
 	assert.Len(serviceInstances, 0)
 }
 
-func TestTerraformVpcsubnet(t *testing.T) {
-	testTerraform(t, "vpcsubnet")
-}
-
-func TestTerraformVpc3tier(t *testing.T) {
-	testTerraform(t, "vpc3tier")
-}
-
-func TestTerraformVpcTgDns(t *testing.T) {
-	testTerraform(t, "vpc-tg-dns-iam")
-}
-
-func TestTerraformRest(t *testing.T) {
-	testTerraform(t, "vpc-rest")
-}
-
-func TestTerraformResources(t *testing.T) {
-	testTerraform(t, "resources")
-}
 
 --------------------------------*/

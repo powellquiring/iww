@@ -1,0 +1,42 @@
+# one origin for each nlb, with a health check from all zones
+resource "ibm_dns_glb_pool" "cloud" {
+  depends_on                = [ibm_dns_zone.widgets_cogs]
+  name                      = var.prefix
+  instance_id               = ibm_resource_instance.dns.guid
+  description               = "all nlbs"
+  enabled                   = true
+  healthy_origins_threshold = 1
+  dynamic "origins" {
+    for_each = module.zone
+    content {
+      name    = origins.value.zone
+      address = origins.value.lb.hostname
+      enabled = true
+      # description = ""
+    }
+  }
+  monitor = ibm_dns_glb_monitor.cloud.monitor_id
+  #notification_channel = "https://mywebsite.cogs/dns/webhook"
+  healthcheck_region = var.region
+  # healthcheck_subnets = [for zone_key, zone in module.zone : zone.subnet_dns.resource_crn]
+  # just first zones
+  healthcheck_subnets = [for zone_key in range(min(2, local.zones)) : module.zone[zone_key].subnet_dns.resource_crn]
+}
+
+resource "ibm_dns_glb" "widgets" {
+  name          = "backend"
+  enabled       = true
+  instance_id   = ibm_resource_instance.dns.guid
+  zone_id       = ibm_dns_zone.widgets_cogs.zone_id
+  description   = "ibm_dns_glb description"
+  ttl           = 120
+  fallback_pool = ibm_dns_glb_pool.cloud.pool_id
+  default_pools = [ibm_dns_glb_pool.cloud.pool_id]
+  #dynamic "az_pools" {
+  #  for_each = module.zone
+  #  content {
+  #    availability_zone = az_pools.value.zone
+  #    pools             = [ibm_dns_glb_pool.cloud[az_pools.key].pool_id]
+  #  }
+  #}
+}

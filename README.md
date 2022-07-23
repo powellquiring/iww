@@ -158,7 +158,7 @@ go test -v ./...
 
 # Releease
 At the beginning of a new release update the version in 
-- Update version in plugin cmd/plugin/iww.go, example 1.0.6
+- Update version (Major, Minor, Build) in plugin cmd/plugin/iww.go, example 1.0.6
 - git push - **latest** github release will be built
 - tag=v1.0.6 ; git tag $tag ; git push origin $tag; #happy with the latest release, make it official
 
