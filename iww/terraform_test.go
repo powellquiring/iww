@@ -50,10 +50,13 @@ func execTerraformApply(t *testing.T, tempDir string) (string, error) {
 }
 
 func listWithParams(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) ([]*ResourceInstanceWrapper, error) {
-	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid); err != nil {
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid, true); err != nil {
 		return nil, err
 	}
-	return List(false)
+	fast := false
+	ret, err := List(fast)
+	lsOutput(ret, fast)
+	return ret, err
 }
 
 func ListWithApikeyRegion(apikey, region string, resourceGroupName string) ([]*ResourceInstanceWrapper, error) {
@@ -123,7 +126,7 @@ func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances
 
 	lenServiceInstances = len(serviceInstances)
 	assert.Greater(lenServiceInstances, 0)
-	Rm(apikey(), "", resourceGroupName(), "", "")
+	Rm(apikey(), "", resourceGroupName(), "", "", true)
 	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
 	assert.Len(serviceInstances, 0)
 	return lenServiceInstances
@@ -131,8 +134,12 @@ func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances
 
 /*----------------
 // Test the environment variables that contain spikey and resource group name
-// This test works 7/2/2022
+// These tests work 9/2/2022
 ----------------*/
+func TestLs(t *testing.T) {
+	Ls(apikey(), "", "", "", false, true)
+}
+
 func TestListWithDefaultApikeyGroupName(t *testing.T) {
 	assert := assert.New(t)
 	_, err := ListWithApikey(apikey(), resourceGroupName())

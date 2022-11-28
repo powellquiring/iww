@@ -9,7 +9,7 @@ import (
 func xTestLs(t *testing.T) {
 	assert := assert.New(t)
 	apikey := apikey()
-	err := SetGlobalContext(apikey, "", "", "", "", "", "")
+	err := SetGlobalContext(apikey, "", "", "", "", "", "", true)
 	assert.Nil(err)
 	context := MustGlobalContext()
 	//context.crn = "crn:v1:bluemix:public:cloud-object-storage:global:a/713c783d9a507a53135fe6793c37cc74:1fd45853-1f6a-4c1c-aa43-9244d2644624::"

@@ -35,6 +35,11 @@ func main() {
 						Name:  "fast",
 						Usage: "fast as possible do not read resource specific attributes",
 					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Usage:   "fast as possible do not read resource specific attributes",
+						Aliases: []string{"v"},
+					},
 					&cli.StringFlag{
 						Name:        "group",
 						Aliases:     []string{"g"},
@@ -51,20 +56,25 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:        "vpcid",
-						Aliases:     []string{"v"},
+						Aliases:     []string{"vpc"},
 						Usage:       "restrict resources to be from one vpc id",
 						Required:    false,
 						Destination: &vpcid,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return iww.Ls(apikey, region, resourceGroup, vpcid, c.Bool("fast"))
+					return iww.Ls(apikey, region, resourceGroup, vpcid, c.Bool("fast"), c.Bool("verbose"))
 				},
 			},
 			{
 				Name:  "rm",
 				Usage: "remove resources",
 				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Usage:   "fast as possible do not read resource specific attributes",
+						Aliases: []string{"v"},
+					},
 					&cli.StringFlag{
 						Name:        "group",
 						Aliases:     []string{"g"},
@@ -87,14 +97,14 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:        "vpcid",
-						Aliases:     []string{"v"},
+						Aliases:     []string{"vpc"},
 						Usage:       "restrict resources to be from one vpc id",
 						Required:    false,
 						Destination: &vpcid,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return iww.Rm(apikey, region, resourceGroup, fileName, vpcid)
+					return iww.Rm(apikey, region, resourceGroup, fileName, vpcid, c.Bool("verbose"))
 				},
 			},
 			{

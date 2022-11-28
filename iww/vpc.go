@@ -5,9 +5,39 @@ package iww
 import (
 	"errors"
 	"log"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	"github.com/Workiva/go-datastructures/set"
 )
+
+// --- vpc, is
+type ResourceFinderVpc struct{}
+
+func (finder ResourceFinderVpc) Find(wrappedResourceInstances []*ResourceInstanceWrapper) (moreInstanceWrappers []*ResourceInstanceWrapper, err error) {
+	MustGlobalContext().verboseLogger.Println("find ResourceFinderVpc")
+	resourceInstances, err := readVpcExtraInstances(wrappedResourceInstances)
+	MustGlobalContext().verboseLogger.Println("find ResourceFinderVpc 2")
+	if err != nil {
+		return nil, err
+	}
+	moreInstanceWrappers = append(wrappedResourceInstances, resourceInstances...)
+
+	// replace with vpc operations for the is instances in the resource controller as well as the vpc extras
+	for _, ri := range moreInstanceWrappers {
+		crn := ri.crn
+		if crn.resourceType == "is" {
+			ri.operations, err = NewVpcOperations(crn)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	err = nil
+	return
+}
 
 // These are irregular operations, notice the switch statements
 type VpcSpecificVPNGatewayInstance struct{}
@@ -67,9 +97,30 @@ func (spec VpcSpecificInstanceTemplateInstance) Get(service *vpcv1.VpcV1, id str
 	}
 }
 
+type VpcSpecificIkePolicy struct{}
+
+func (vpc VpcSpecificIkePolicy) Destroy(service *vpcv1.VpcV1, id string) (interface{}, error) {
+	return service.DeleteIkePolicy(service.NewDeleteIkePolicyOptions(id))
+}
+
+func (spec VpcSpecificIkePolicy) Get(service *vpcv1.VpcV1, id string) (string, string, bool, interface{}, error) {
+	ikePolicy, response, err := service.GetIkePolicy(service.NewGetIkePolicyOptions(id))
+	// if instance, ok := _instance.(*vpcv1.IkePolicy)
+	if err == nil {
+		return *ikePolicy.Name, "", true, response, nil
+	} else {
+		if response != nil && response.StatusCode == 404 {
+			return "", "", false, response, nil
+		} else {
+			return "", "", false, response, err
+		}
+	}
+}
+
 var VpcSubtypeOperationsIrregularMap = map[string]VpcSubtypeOperations{
 	"instance-template": VpcSpecificInstanceTemplateInstance{},
 	"vpn":               VpcSpecificVPNGatewayInstance{},
+	"ikepolicy":         VpcSpecificIkePolicy{},
 }
 
 // IS operations
@@ -283,35 +334,141 @@ func isSubnet(ri *ResourceInstanceWrapper) bool {
 	return ri.crn.resourceType == "is" && ri.crn.vpcType == "subnet"
 }
 
-func readVpcExtraInstances(currentResourceInstances []*ResourceInstanceWrapper) ([]*ResourceInstanceWrapper, error) {
-	// find all regions that contain subnets
-	subnetClients := make(map[*vpcv1.VpcV1]*ResourceInstanceWrapper, 0)
-	for _, ri := range currentResourceInstances {
-		if isSubnet(ri) {
-			client, err := MustGlobalContext().getVpcClient(ri.crn)
-			if err != nil {
-				return nil, err
-			}
-			if _, ok := subnetClients[client]; !ok {
-				subnetClients[client] = ri
+type resourceInstanceWrapperErr struct {
+	ri  *ResourceInstanceWrapper
+	err error
+}
+
+// listInstanceTemplates appens onto list the list of instance templates
+//func listInstanceTemplates(list list.PersistentList, client *vpcv1.VpcV1, wg *sync.WaitGroup) {
+func listInstanceTemplates(list *set.Set, client *vpcv1.VpcV1, wg *sync.WaitGroup) {
+	defer wg.Done()
+	lriOptions := client.NewListInstanceTemplatesOptions()
+	result, _, err := client.ListInstanceTemplates(lriOptions)
+	if err == nil {
+		for _, t := range result.Templates {
+			if it, ok := t.(*vpcv1.InstanceTemplate); ok {
+				list.Add(&resourceInstanceWrapperErr{NewResourceInstanceWrapper(NewCrn(*it.CRN), it.ResourceGroup.ID, it.Name), nil})
 			}
 		}
+	} else {
+		list.Add(&resourceInstanceWrapperErr{nil, err})
 	}
+}
 
-	// Kludge: only add the resources in subnets already in the list of resources
-	// TODO fix this, or wait for https://bigblue.aha.io/ideas/ideas/CPS-I-1597
-	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
-	for subnetClient := range subnetClients {
-		lriOptions := subnetClient.NewListInstanceTemplatesOptions()
-		result, _, err := subnetClient.ListInstanceTemplates(lriOptions)
+// listInstanceTemplates appens onto list the list of instance templates
+func listIkePolicies(list *set.Set, client *vpcv1.VpcV1, wg *sync.WaitGroup) {
+	defer wg.Done()
+	// todo ID is not a CRN below
+	likeOptions := client.NewListIkePoliciesOptions()
+	ikePolilcies, _, err := client.ListIkePolicies(likeOptions)
+	if err == nil {
+		for _, it := range ikePolilcies.IkePolicies {
+			region := regionFromUrl(client.Service.Options.URL)
+			crn := NewFakeCrn("is", "", "ikepolicy", *it.ID, region)
+			list.Add(&resourceInstanceWrapperErr{NewResourceInstanceWrapper(crn, it.ResourceGroup.ID, it.Name), nil})
+		}
+	} else {
+		list.Add(&resourceInstanceWrapperErr{nil, err})
+	}
+}
+
+var check bool = false
+
+func regionNames(context *Context) (map[string]string, error) {
+	regions := map[string]string{
+		"au-syd":   "au-syd",
+		"br-sao":   "br-sao",
+		"ca-tor":   "ca-tor",
+		"eu-de":    "eu-de",
+		"eu-gb":    "eu-gb",
+		"jp-osa":   "jp-osa",
+		"jp-tok":   "jp-tok",
+		"us-east":  "us-east",
+		"us-south": "us-south",
+	}
+	if check {
+		client, err := context.getVpcClientFromRegion("us-south")
 		if err != nil {
 			return nil, err
 		}
-		for _, t := range result.Templates {
-			if it, ok := t.(*vpcv1.InstanceTemplate); ok {
-				wrappedResourceInstances = append(wrappedResourceInstances, NewResourceInstanceWrapper(NewCrn(*it.CRN), it.ResourceGroup.ID, it.Name))
+		regionCollection, _, err := client.ListRegions(client.NewListRegionsOptions())
+		if err != nil {
+			return nil, err
+		}
+		if len(regionCollection.Regions) != len(regions) {
+			return nil, errors.New("vpc region check mismatch: len")
+		}
+		for _, region := range regionCollection.Regions {
+			if _, ok := regions[*region.Name]; !ok {
+				return nil, errors.New("vpc region check mismatch: not found:" + *region.Name)
 			}
 		}
 	}
+	return regions, nil
+}
+
+func vpcRegionClients() ([]*vpcv1.VpcV1, error) {
+	context := MustGlobalContext()
+	regions, err := regionNames(context)
+	if err != nil {
+		return nil, err
+	}
+	regionClients := make([]*vpcv1.VpcV1, 0)
+	for _, region := range regions {
+		client, err := context.getVpcClientFromRegion(region)
+		/* write a bug report region.Endpoint is https://au-syd.iaas.cloud.ibm.com expecting https://au-syd.iaas.cloud.ibm.com/v1
+		client, err = vpcv1.NewVpcV1(&vpcv1.VpcV1Options{
+			Authenticator: MustGlobalContext().authenticator,
+			URL:           *region.Endpoint,
+		})
+		*/
+		if err != nil {
+			return nil, err
+		}
+		regionClients = append(regionClients, client)
+	}
+	return regionClients, nil
+}
+
+func readVpcExtraInstances(currentResourceInstances []*ResourceInstanceWrapper) ([]*ResourceInstanceWrapper, error) {
+	regionClients, err := vpcRegionClients()
+	if err != nil {
+		return nil, err
+	}
+	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
+	set := set.New()
+	var wg sync.WaitGroup
+
+	for _, client := range regionClients {
+		time.Sleep(10 * time.Millisecond) // avoid rate limiting
+		wg.Add(2)
+		if Async {
+			// go listInstanceTemplates(list, client, &wg)
+			go listInstanceTemplates(set, client, &wg)
+			go listIkePolicies(set, client, &wg)
+		} else {
+			// listInstanceTemplates(list, client, &wg)
+			listInstanceTemplates(set, client, &wg)
+			listIkePolicies(set, client, &wg)
+		}
+
+	}
+	wg.Wait()
+
+	for _, _rie := range set.Flatten() {
+		rie := _rie.(*resourceInstanceWrapperErr)
+		if rie.err != nil {
+			return nil, err
+		}
+		wrappedResourceInstances = append(wrappedResourceInstances, rie.ri)
+	}
 	return wrappedResourceInstances, nil
+}
+
+// regionFromUrl returns the region in a url string: "https://us-south.iaas.cloud.ibm.com/v1"
+func regionFromUrl(url string) string {
+	rest := strings.Split(url, "//")
+	regionPlus := strings.Split(rest[1], ".")
+	return regionPlus[0]
 }

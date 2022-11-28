@@ -79,6 +79,7 @@ resource "ibm_is_instance" "front" {
 resource "ibm_is_snapshot" "frontsnap" {
   name          = ibm_is_instance.front.name
   source_volume = ibm_is_instance.front.volume_attachments[0].volume_id
+  resource_group = local.resource_group
 }
 
 

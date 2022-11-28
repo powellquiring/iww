@@ -25,3 +25,6 @@ generated_key_rsa
 terraform_service_credentials.json
 cert
 Release.txt
+
+*.prof
+__debug_bin

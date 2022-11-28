@@ -13,9 +13,9 @@ TODO shore up the names: resource, ServiceInstance, etc are all kind of similar 
 */
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"sort"
@@ -26,7 +26,6 @@ import (
 
 	"github.com/IBM/go-sdk-core/v5/core"
 	kp "github.com/IBM/keyprotect-go-client"
-	"github.com/IBM/networking-go-sdk/dnssvcsv1"
 	"github.com/IBM/networking-go-sdk/transitgatewayapisv1"
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
@@ -60,12 +59,13 @@ type Context struct {
 	nameToResourceGroupIDMutex sync.Mutex
 	resourceManagerClient      *resourcemanagerv2.ResourceManagerV2
 	resourceControllerClient   *resourcecontrollerv2.ResourceControllerV2
+	verboseLogger              *log.Logger
 }
 
 var GlobalContext *Context
 
 // return the cached context or create it the first time called
-func SetGlobalContext(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) error {
+func SetGlobalContext(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, verbose bool) error {
 	if GlobalContext != nil {
 		return nil
 	}
@@ -111,6 +111,12 @@ func SetGlobalContext(apikey string, token string, accountID string, region stri
 	GlobalContext.resourceControllerClient, err = GlobalContext.getResourceControllerClient()
 	if err != nil {
 		return err
+	}
+	if verbose {
+		GlobalContext.verboseLogger = log.New(os.Stdout, "-- ", log.LstdFlags)
+		GlobalContext.verboseLogger.Print("start")
+	} else {
+		GlobalContext.verboseLogger = log.New(ioutil.Discard, "discarded", log.LstdFlags)
 	}
 	return SetGlobalContextResourceGroupID()
 }
@@ -202,6 +208,7 @@ func NewCrn(crn string) *Crn {
 		}
 	}
 
+	// todo refactor vpcType -> subType, vpcId -> subId
 	return &Crn{
 		Crn:          crn,
 		resourceType: parts[4],
@@ -210,6 +217,20 @@ func NewCrn(crn string) *Crn {
 		vpcId:        parts[9],
 		region:       region,
 		zone:         zone,
+	}
+}
+
+// some resources do not have a real crn, so create what is needed, typically just a region and ID
+func NewFakeCrn(resourceType, id, vpcType, vpcId, region string) *Crn {
+	crn := "crn:v1:bluemix:public:" + resourceType + ":" + region + ":a/ACCOUNT:" + id + ":" + vpcType + ":" + vpcId
+	return &Crn{
+		Crn:          crn,
+		resourceType: resourceType,
+		id:           id,
+		vpcType:      vpcType,
+		vpcId:        vpcId,
+		region:       region,
+		zone:         "",
 	}
 }
 
@@ -226,7 +247,7 @@ type ResourceInstanceWrapper struct {
 	//context         *Context
 	ResourceGroupID *string
 	Name            *string
-	// resource   resourcecontrollerv2.ResourceInstance
+	resource        interface{}
 }
 
 func (ri *ResourceInstanceWrapper) Fetch() { ri.operations.Fetch(ri) }
@@ -291,52 +312,6 @@ func (s *TypicalServiceOperations) FormatInstance(si *ResourceInstanceWrapper, f
 }
 
 //--------------------------------------
-type ResourceKeyOperations struct {
-	getResult   *resourcecontrollerv2.ResourceKey
-	getResponse *core.DetailedResponse
-	getErr      error
-}
-
-func (s *ResourceKeyOperations) Destroy(si *ResourceInstanceWrapper) {
-	context := MustGlobalContext()
-	id := si.crn.Crn
-	rc := context.resourceControllerClient
-	options := rc.NewDeleteResourceKeyOptions(id)
-	response, err := rc.DeleteResourceKey(options)
-	if err != nil {
-		statusCode := "not_returned"
-		if response != nil {
-			statusCode = strconv.Itoa(response.StatusCode)
-		}
-		log.Print("TypicalServiceOpertions DeleteResourceKey, StatusCode:", statusCode, " Crn:", si.crn.Crn, " err:", err.Error())
-	}
-}
-
-func (s *ResourceKeyOperations) Fetch(si *ResourceInstanceWrapper) {
-	context := MustGlobalContext()
-	id := si.crn.Crn
-	rc := context.resourceControllerClient
-	options := rc.NewGetResourceKeyOptions(id)
-	s.getResult, s.getResponse, s.getErr = rc.GetResourceKey(options)
-	if s.getErr != nil {
-		if s.getResponse != nil && (s.getResponse.StatusCode == 404 || s.getResponse.StatusCode == 410) {
-			si.state = SIStateDeleted
-		} else {
-			log.Print(s.getErr)
-		}
-	} else {
-		si.state = SIStateExists
-		if s.getResult != nil && *s.getResult.State == "removed" {
-			si.state = SIStateDeleted
-		}
-	}
-}
-
-func (s *ResourceKeyOperations) FormatInstance(si *ResourceInstanceWrapper, fast bool) string {
-	return FormatInstance(*si.Name, "-", *si.crn)
-}
-
-//--------------------------------------
 // If the CRN can not be understood this unimplementedservice is used.
 type UnimplementedServiceOperations struct {
 }
@@ -355,83 +330,7 @@ func (s UnimplementedServiceOperations) FormatInstance(si *ResourceInstanceWrapp
 	//  + FormatInstance(*si.Name, "NilServiceOpertions", *si.crn)
 }
 
-//--------------------------------------
-type KeyprotectServiceOpertions struct {
-}
-
-func (s *KeyprotectServiceOpertions) Destroy(si *ResourceInstanceWrapper) {
-	crn := si.crn
-	if client, err := MustGlobalContext().getKeyProtectClient(crn); err == nil {
-		pageSize := 3
-		keys := make([]kp.Key, 0)
-		// 100 times through max, avoid infinite loop
-		for i := 0; i < 100; i = i + 1 {
-			getKeys, err := client.GetKeys(context.Background(), pageSize, i*pageSize)
-			if err == nil {
-				keys = append(keys, getKeys.Keys...)
-				if len(getKeys.Keys) < pageSize {
-					break
-				}
-			} else {
-				log.Println("KeyprotectServiceOpertions GetKeys failed err:", err)
-				break
-			}
-		}
-		for _, key := range keys {
-			delKey, err := client.DeleteKey(context.Background(), key.ID, kp.ReturnRepresentation, kp.ForceOpt{Force: true})
-			if err != nil {
-				log.Print("KeyprotectServiceOpertions error while deleting the key: ", err)
-			} else {
-				log.Print("KeyprotectServiceOpertions deleted key name:", delKey.Name, ", id:", delKey.ID)
-			}
-		}
-	}
-	(&TypicalServiceOperations{}).Destroy(si)
-}
-
-// kms removes itsef from the resource controller but continues to return a state of removed
-func (s *KeyprotectServiceOpertions) Fetch(si *ResourceInstanceWrapper) {
-	(&TypicalServiceOperations{}).Fetch(si)
-}
-
-func (s *KeyprotectServiceOpertions) FormatInstance(si *ResourceInstanceWrapper, fast bool) string {
-	return FormatInstance(*si.Name, "-", *si.crn)
-}
-
-//--------------------------------------
-type TransitGatewayServiceOpertions struct {
-}
-
-func (s *TransitGatewayServiceOpertions) Destroy(si *ResourceInstanceWrapper) {
-	crn := si.crn
-	if client, err := MustGlobalContext().getTransitGatewayClient(crn); err == nil {
-		deleteTransitGatewayOptions := client.NewDeleteTransitGatewayOptions(
-			crn.vpcId,
-			// crn.Crn,
-		)
-
-		response, err := client.DeleteTransitGateway(deleteTransitGatewayOptions)
-		if err != nil {
-			statusCode := 0
-			if response != nil {
-				statusCode = response.StatusCode
-				return
-			}
-			log.Print("TransitGateway error while deleting status code:", statusCode, ", err:", err)
-		}
-	} else {
-		log.Print("Error deleting transit gateway err:", err)
-	}
-}
-
-func (s *TransitGatewayServiceOpertions) Fetch(si *ResourceInstanceWrapper) {
-	(&TypicalServiceOperations{}).Fetch(si)
-}
-
-func (s *TransitGatewayServiceOpertions) FormatInstance(si *ResourceInstanceWrapper, fast bool) string {
-	return (&TypicalServiceOperations{}).FormatInstance(si, fast)
-}
-
+/* todo
 //--------------------------------------
 // ResourceToWrapper returns a resource from a resource instance
 func operationsForWrappedResourceInstances(ri *ResourceInstanceWrapper) (ResourceInstanceOperations, error) {
@@ -453,6 +352,7 @@ func operationsForWrappedResourceInstances(ri *ResourceInstanceWrapper) (Resourc
 		// return UnimplementedServiceOperations{}, nil
 	}
 }
+*/
 
 // pruneWrappedResourceInstancesByIs removes all non "is" resources from the list
 func pruneWrappedResourceInstancesByIs(wrappedResourceInstances []*ResourceInstanceWrapper) []*ResourceInstanceWrapper {
@@ -464,14 +364,6 @@ func pruneWrappedResourceInstancesByIs(wrappedResourceInstances []*ResourceInsta
 		}
 	}
 	return ret
-}
-
-//------------------------------------
-// Global variable initialization section
-func (context *Context) getResourceControllerClient() (client *resourcecontrollerv2.ResourceControllerV2, err error) {
-	return resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
-		Authenticator: context.authenticator,
-	})
 }
 
 func (context *Context) getIamClient() (client *iamidentityv1.IamIdentityV1, err error) {
@@ -503,12 +395,16 @@ func (context *Context) getKeyProtectClient(crn *Crn) (*kp.Client, error) {
 	return kp.New(config, kp.DefaultTransport())
 }
 
-func (context *Context) getVpcClient(crn *Crn) (service *vpcv1.VpcV1, err error) {
-	region := crn.region
+func (context *Context) getVpcClientFromRegion(region string) (service *vpcv1.VpcV1, err error) {
 	return vpcv1.NewVpcV1(&vpcv1.VpcV1Options{
 		Authenticator: MustGlobalContext().authenticator,
 		URL:           ApiEndpoint("https://<region>.iaas.cloud.ibm.com/v1", region),
 	})
+}
+
+func (context *Context) getVpcClient(crn *Crn) (service *vpcv1.VpcV1, err error) {
+	region := crn.region
+	return context.getVpcClientFromRegion(region)
 }
 
 func (context *Context) getTransitGatewayClient(crn *Crn) (*transitgatewayapisv1.TransitGatewayApisV1, error) {
@@ -521,12 +417,6 @@ func (context *Context) getTransitGatewayClient(crn *Crn) (*transitgatewayapisv1
 	return transitgatewayapisv1.NewTransitGatewayApisV1(options)
 	// todo
 	// client.SetServiceURL("https://transit.cloud.ibm.com/v1")
-}
-
-func (context *Context) getDnssvcsClient() (client *dnssvcsv1.DnsSvcsV1, err error) {
-	return dnssvcsv1.NewDnsSvcsV1(&dnssvcsv1.DnsSvcsV1Options{
-		Authenticator: context.authenticator,
-	})
 }
 
 // done with clients
@@ -621,74 +511,51 @@ func newInt64(i int64) *int64 {
 	return &i
 }
 
-// Return the list of resource instances matching the option
-func ResourceInstances(service *resourcecontrollerv2.ResourceControllerV2, lrio *resourcecontrollerv2.ListResourceInstancesOptions) ([]resourcecontrollerv2.ResourceInstance, error) {
-	resourceInstances := make([]resourcecontrollerv2.ResourceInstance, 0)
-	// limit the number of calls
-	for i := 0; i < 100; i++ {
-		resourceInstancesList, _, err := service.ListResourceInstances(lrio)
-		if err != nil {
-			return resourceInstances, err
-		}
-		resourceInstances = append(resourceInstances, resourceInstancesList.Resources...)
-		if resourceInstancesList.NextURL == nil {
-			break // yeah, got them all
-		}
-		startString, err := core.GetQueryParam(resourceInstancesList.NextURL, "start")
-		if err != nil {
-			return resourceInstances, err
-		}
-		lrio.SetStart(*startString)
-	}
-	return resourceInstances, nil
-}
-
 // ListExpandFastPruneAddOperations is the list from the RC, expanded to include extra instances not in RC
 // then fast prune (no fetching instances) then add operations
+type ResourceFinder interface {
+	// Find will take the current resource instances and find more and adjust the operators
+	Find([]*ResourceInstanceWrapper) (moreInstanceWrappers []*ResourceInstanceWrapper, err error)
+}
+
+// resourceFinders is a squential list of finders, order is important since most finders expect
+// to be passed a list of resource from the resource controller, RC
+var resourceFinders []ResourceFinder = []ResourceFinder{
+	ResourceFinderRC{},
+	ResourceFinderSchematics{},
+	ResourceFinderTransitGateway{},
+	ResourceFinderVpc{},
+	ResourceFinderResourceKeys{},
+	ResourceFinderDns{},
+	ResourceFinderKeyProtect{},
+}
+
+// Return the resources in the cloud, if no filters then all of them, see filtering
 func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
-	context := MustGlobalContext()
-	resourceControllerClient, err := context.getResourceControllerClient()
-	if err != nil {
-		return nil, err
-	}
 	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
-
-	resourceInstances, err := readResourceInstances(resourceControllerClient)
-	if err != nil {
-		return nil, err
+	for _, finder := range resourceFinders {
+		var err error
+		wrappedResourceInstances, err = finder.Find(wrappedResourceInstances)
+		if err != nil {
+			return nil, err
+		}
 	}
-	wrappedResourceInstances = append(wrappedResourceInstances, resourceInstances...)
-
-	serviceKeys, err := readResourceKeys(resourceControllerClient, wrappedResourceInstances)
-	if err != nil {
-		return nil, err
-	}
-	wrappedResourceInstances = append(wrappedResourceInstances, serviceKeys...)
-
-	vpcExtraInstances, err := readVpcExtraInstances(wrappedResourceInstances)
-	if err != nil {
-		return nil, err
-	}
-	wrappedResourceInstances = append(wrappedResourceInstances, vpcExtraInstances...)
-
-	wrappedDnsResources, err := readDnsResources(wrappedResourceInstances)
-	if err != nil {
-		return nil, err
-	}
-	wrappedResourceInstances = append(wrappedResourceInstances, wrappedDnsResources...)
-
+	context := MustGlobalContext()
 	if context.isType {
 		wrappedResourceInstances = pruneWrappedResourceInstancesByIs(wrappedResourceInstances)
 	}
 
-	for _, ri := range wrappedResourceInstances {
-		operations, err := operationsForWrappedResourceInstances(ri)
-		if err != nil {
-			return nil, err
+	// the original resource controller list only included resources from the resource group
+	// but the finders could have added resources in the wrong group.
+	if context.resourceGroupID != "" {
+		var ret []*ResourceInstanceWrapper
+		for _, ri := range wrappedResourceInstances {
+			if *ri.ResourceGroupID == context.resourceGroupID {
+				ret = append(ret, ri)
+			}
 		}
-		ri.operations = operations
+		return ret, nil
 	}
-
 	return wrappedResourceInstances, nil
 }
 
@@ -763,129 +630,36 @@ func NewResourceInstanceWrapper(crn *Crn, resourceGroupID *string, name *string)
 	}
 }
 
-// readResourceInstance returns a slice containing one resource matching the provided crn
-func readResourceInstance(crn string) ([]resourcecontrollerv2.ResourceInstance, error) {
-	context := MustGlobalContext()
-	c := NewCrn(crn)
-	id := c.id
-
-	getResourceInstanceOptions := context.resourceControllerClient.NewGetResourceInstanceOptions(id)
-	resourceInstance, _, err := context.resourceControllerClient.GetResourceInstance(getResourceInstanceOptions)
-	if err != nil {
-		return nil, err
-	}
-	return []resourcecontrollerv2.ResourceInstance{*resourceInstance}, nil
-}
-
-// Read the resource instances filtered by resource group and region
-func readResourceInstances(resourceControllerClient *resourcecontrollerv2.ResourceControllerV2) ([]*ResourceInstanceWrapper, error) {
-	context := MustGlobalContext()
-	var resourceInstances []resourcecontrollerv2.ResourceInstance
-	var err error
-	if context.crn != "" {
-		resourceInstances, err = readResourceInstance(context.crn)
-	} else {
-		// filter by resource group
-		lriOptions := resourceControllerClient.NewListResourceInstancesOptions()
-		if context.resourceGroupID != "" {
-			lriOptions.SetResourceGroupID(context.resourceGroupID)
-		}
-		resourceInstances, err = ResourceInstances(resourceControllerClient, lriOptions)
-		if err != nil {
-			fmt.Println(err)
-			return nil, err
-		}
-	}
-
-	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
-	for _, ri := range resourceInstances {
-		crn := NewCrn(*ri.CRN)
-		si := NewResourceInstanceWrapper(crn, ri.ResourceGroupID, ri.Name)
-		// filter by region
-		if context.region == "" || context.region == crn.region {
-			wrappedResourceInstances = append(wrappedResourceInstances, si)
-		}
-	}
-	return wrappedResourceInstances, nil
-}
-
-// Return the list of service keys matching the option
-func ResourceKeys(service *resourcecontrollerv2.ResourceControllerV2, lrio *resourcecontrollerv2.ListResourceKeysOptions) ([]resourcecontrollerv2.ResourceKey, error) {
-	resourceKeys := make([]resourcecontrollerv2.ResourceKey, 0)
-	// limit the number of calls
-	for i := 0; i < 100; i++ {
-		resourceInstancesList, _, err := service.ListResourceKeys(lrio)
-		if err != nil {
-			return resourceKeys, err
-		}
-		resourceKeys = append(resourceKeys, resourceInstancesList.Resources...)
-		if resourceInstancesList.NextURL == nil {
-			break // yeah, got them all
-		}
-		startString, err := core.GetQueryParam(resourceInstancesList.NextURL, "start")
-		if err != nil {
-			return resourceKeys, err
-		}
-		lrio.SetStart(*startString)
-	}
-	return resourceKeys, nil
-}
-
-// readResourceKeys will return wrapped keys for the resources in the list
-func readResourceKeys(resourceControllerClient *resourcecontrollerv2.ResourceControllerV2, justTheseResources []*ResourceInstanceWrapper) ([]*ResourceInstanceWrapper, error) {
-	context := MustGlobalContext()
-	lrkOptions := resourceControllerClient.NewListResourceKeysOptions()
-	if context.resourceGroupID != "" {
-		lrkOptions.SetResourceGroupID(context.resourceGroupID)
-	}
-	resourceKeys, err := ResourceKeys(resourceControllerClient, lrkOptions)
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
-	justTheseResourcesCrns := make(map[string]bool)
-	for _, justThisOne := range justTheseResources {
-		justTheseResourcesCrns[(*justThisOne.crn).Crn] = true
-	}
-
-	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
-	var lastErr error
-	for _, rk := range resourceKeys {
-		crn_s := *rk.CRN
-		if justTheseResourcesCrns[*rk.SourceCRN] {
-			crn := NewCrn(crn_s)
-			si := NewResourceInstanceWrapper(crn, rk.ResourceGroupID, rk.Name)
-			if err != nil {
-				lastErr = err
-				fmt.Println("BAD CRN:", crn_s)
-			} else {
-				if context.region == "" || context.region == crn.region {
-					wrappedResourceInstances = append(wrappedResourceInstances, si)
-				}
-			}
-		}
-	}
-	return wrappedResourceInstances, lastErr
+// NewSubInstance creates a resource for a subtype of a parent type.  The "iww-" is added to the subtype to identify it as
+// an iww subtype and not an actual one
+func NewSubInstance(parent *ResourceInstanceWrapper, subType, id string, name *string, operations ResourceInstanceOperations) *ResourceInstanceWrapper {
+	typeCrn := parent.crn.Crn
+	crnString := typeCrn[0:len(typeCrn)-1] + "iww-" + subType + ":" + id
+	crn := NewCrn(crnString)
+	ret := NewResourceInstanceWrapper(crn, parent.ResourceGroupID, name)
+	// zone.resource = dz
+	ret.operations = operations
+	return ret
 }
 
 // ls with apikey from iww command line
-func Ls(apikey, region string, resourceGroupName string, vpcid string, fast bool) error {
-	return LsCommon(apikey, "", "", region, resourceGroupName, "", vpcid, fast)
+func Ls(apikey, region string, resourceGroupName string, vpcid string, fast bool, verbose bool) error {
+	return LsCommon(apikey, "", "", region, resourceGroupName, "", vpcid, fast, verbose)
 }
 
 // ls with context manager from ibmcloud cli
 func LsWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool) error {
-	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, fast) // todo vpcid
+	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, fast, false) // todo vpcid, todo verbose
 }
 
-func LsCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool) error {
+func LsCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool, verbose bool) error {
 	if vpcid != "" {
 		if fast {
 			return errors.New("fast and vpcid are not compatible")
 		}
 
 	}
-	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid); err != nil {
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid, verbose); err != nil {
 		return err
 	}
 	wrappedResourceInstances, err := List(fast)
@@ -1033,20 +807,20 @@ func pruneResourcesThatDoNotExist(nextServiceInstances []*ResourceInstanceWrappe
 	return ret
 }
 
-func Rm(apikey, region string, resourceGroupName string, fileName string, vpcid string) error {
+func Rm(apikey, region string, resourceGroupName string, fileName string, vpcid string, verbose bool) error {
 	if fileName != "" {
 		log.Print("rm from file not supported, fileName:", fileName)
 		return nil
 	}
-	return RmCommon(apikey, "", "", region, resourceGroupName, "", vpcid)
+	return RmCommon(apikey, "", "", region, resourceGroupName, "", vpcid, verbose)
 }
 
 func RmWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) error {
-	return RmCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid)
+	return RmCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, false)
 }
 
-func RmCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string) error {
-	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid); err != nil { // todo
+func RmCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, verbose bool) error {
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid, verbose); err != nil { // todo
 		return err
 	}
 	if resourceGroupName == "" && resourceGroupID == "" && vpcid == "" {
@@ -1066,7 +840,7 @@ func Tst(apikey, region string, resourceGroupName string) error {
 }
 
 func TstCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string) error {
-	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, ""); err != nil { // todo
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, "", true); err != nil { // todo
 		return err
 	}
 	serviceInstances, err := List(false)
