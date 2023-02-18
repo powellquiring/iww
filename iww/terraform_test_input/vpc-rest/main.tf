@@ -77,8 +77,8 @@ resource "ibm_is_instance" "front" {
 }
 
 resource "ibm_is_snapshot" "frontsnap" {
-  name          = ibm_is_instance.front.name
-  source_volume = ibm_is_instance.front.volume_attachments[0].volume_id
+  name           = ibm_is_instance.front.name
+  source_volume  = ibm_is_instance.front.volume_attachments[0].volume_id
   resource_group = local.resource_group
 }
 
@@ -104,11 +104,14 @@ resource "ibm_is_ike_policy" "main" {
   ike_version              = 1
 }
 
+/*
+todo is this needed?  snapshots not working if stopped
 resource "ibm_is_instance_action" "main" {
   action       = "stop"
   force_action = false
   instance     = ibm_is_instance.front.id
 }
+*/
 
 resource "ibm_is_instance_disk_management" "main" {
   instance = ibm_is_instance.front.id
@@ -145,10 +148,10 @@ resource "ibm_is_instance_group" "main" {
   subnets           = [ibm_is_subnet.front.id]
 }
 resource "ibm_is_instance_group_manager" "main" {
-  name           = local.name
-  instance_group = ibm_is_instance_group.main.id
-  enable_manager = true
-  manager_type   = "scheduled"
+  name                 = local.name
+  instance_group       = ibm_is_instance_group.main.id
+  enable_manager       = true
+  manager_type         = "scheduled"
   max_membership_count = 2
   min_membership_count = 1
 }
@@ -178,7 +181,7 @@ resource "ibm_is_instance_group" "autoscale" {
 }
 
 resource "ibm_is_instance_group_manager" "autoscale" {
-  name              = "${local.name}-autoscale"
+  name                 = "${local.name}-autoscale"
   aggregation_window   = 120
   instance_group       = ibm_is_instance_group.autoscale.id
   cooldown             = 300
@@ -190,7 +193,7 @@ resource "ibm_is_instance_group_manager" "autoscale" {
 
 
 resource "ibm_is_instance_group_manager_policy" "autoscale" {
-  name              = "${local.name}-autoscale"
+  name                   = "${local.name}-autoscale"
   instance_group         = ibm_is_instance_group.autoscale.id
   instance_group_manager = ibm_is_instance_group_manager.autoscale.manager_id
   metric_type            = "cpu"

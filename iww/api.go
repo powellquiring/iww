@@ -38,9 +38,50 @@ type Key struct {
 	region, instanceId string
 }
 
+const Verbose = true
+
+func pbar(max int64, description ...string) *progressbar.ProgressBar {
+	if Verbose {
+		return progressbar.Default(max, description...)
+	} else {
+		return progressbar.DefaultSilent(max, description...)
+	}
+}
+
+type ProgressBarWrapper struct {
+	progressBar *progressbar.ProgressBar
+	taken       int
+	total       int
+}
+
+func NewProgressBarWrapper() *ProgressBarWrapper {
+	const PBMAX = 1_000
+	return &ProgressBarWrapper{progressBar: pbar(PBMAX), taken: 0, total: PBMAX}
+}
+
+// Make a new progress bar wrapper.  The size is a percent of total like progress
+func (pbw *ProgressBarWrapper) subProgress(percent float64) *ProgressBarWrapper {
+	pbmax := int((float64(pbw.total) * percent) + 0.5)
+	if pbmax > pbw.total {
+		pbmax = pbw.total - pbw.taken
+	}
+	return &ProgressBarWrapper{progressBar: pbw.progressBar, taken: 0, total: pbmax}
+}
+
+func (pbw *ProgressBarWrapper) progress(percent float64) {
+	add := int((float64(pbw.total) * percent) + 0.5)
+	if add+pbw.taken > pbw.total {
+		add = pbw.total - pbw.taken
+	}
+	pbw.taken += add
+	pbw.progressBar.Add(add)
+}
+
 // Global variables all the ones that end in Service are useful for operations
 type Context struct {
-	authenticator core.Authenticator
+	verboseLogger      *log.Logger
+	progressBarWrapper *ProgressBarWrapper
+	authenticator      core.Authenticator
 	// apikey or token but not both, seems like authenticator would be enough but services like key protect
 	// do not use an authenticator
 	apikey            string
@@ -59,21 +100,29 @@ type Context struct {
 	nameToResourceGroupIDMutex sync.Mutex
 	resourceManagerClient      *resourcemanagerv2.ResourceManagerV2
 	resourceControllerClient   *resourcecontrollerv2.ResourceControllerV2
-	verboseLogger              *log.Logger
 }
 
 var GlobalContext *Context
 
 // return the cached context or create it the first time called
 func SetGlobalContext(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, verbose bool) error {
+	var err error
 	if GlobalContext != nil {
 		return nil
 	}
+	GlobalContext = &Context{}
 	if !((apikey != "" && token == "") || (apikey == "" && token != "")) {
 		return errors.New("one of apikey or token must be provided (not both)")
 	}
-	var err error
-	GlobalContext = &Context{}
+
+	if verbose {
+		GlobalContext.verboseLogger = log.New(os.Stdout, "-- ", log.LstdFlags)
+		GlobalContext.verboseLogger.Print("start")
+	} else {
+		GlobalContext.verboseLogger = log.New(ioutil.Discard, "discarded", log.LstdFlags)
+	}
+	GlobalContext.progressBarWrapper = NewProgressBarWrapper()
+	defer GlobalContext.progressBarWrapper.progress(0.10)
 	GlobalContext.region = region
 	GlobalContext.apikey = apikey
 	GlobalContext.token = token
@@ -111,12 +160,6 @@ func SetGlobalContext(apikey string, token string, accountID string, region stri
 	GlobalContext.resourceControllerClient, err = GlobalContext.getResourceControllerClient()
 	if err != nil {
 		return err
-	}
-	if verbose {
-		GlobalContext.verboseLogger = log.New(os.Stdout, "-- ", log.LstdFlags)
-		GlobalContext.verboseLogger.Print("start")
-	} else {
-		GlobalContext.verboseLogger = log.New(ioutil.Discard, "discarded", log.LstdFlags)
 	}
 	return SetGlobalContextResourceGroupID()
 }
@@ -533,12 +576,15 @@ var resourceFinders []ResourceFinder = []ResourceFinder{
 // Return the resources in the cloud, if no filters then all of them, see filtering
 func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
 	wrappedResourceInstances := make([]*ResourceInstanceWrapper, 0)
+	percent := 1.0 / float64(len(resourceFinders))
+	pbw := MustGlobalContext().progressBarWrapper.subProgress(100.0)
 	for _, finder := range resourceFinders {
 		var err error
 		wrappedResourceInstances, err = finder.Find(wrappedResourceInstances)
 		if err != nil {
 			return nil, err
 		}
+		pbw.progress(percent)
 	}
 	context := MustGlobalContext()
 	if context.isType {
@@ -559,17 +605,7 @@ func ListExpandFastPruneAddOperations() ([]*ResourceInstanceWrapper, error) {
 	return wrappedResourceInstances, nil
 }
 
-const Verbose = false
-
 const Async = true
-
-func pbar(max int64, description ...string) *progressbar.ProgressBar {
-	if Verbose {
-		return progressbar.Default(max, description...)
-	} else {
-		return progressbar.DefaultSilent(max, description...)
-	}
-}
 
 func fetchStoreResults(ri *ResourceInstanceWrapper, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -591,11 +627,10 @@ func List(fast bool) ([]*ResourceInstanceWrapper, error) {
 	} else {
 		fetchedRis := make([]*ResourceInstanceWrapper, len(wrappedResourceInstances))
 		var wg sync.WaitGroup
-		bar := pbar(int64(len(wrappedResourceInstances)))
 		// for some filtering, like vpcid, it is required to fetch.  To be consistent fetch now
 		for index, ri := range wrappedResourceInstances {
 			fetchedRis[index] = ri
-			bar.Add(1)
+			// context.progressBarWrapper.progress(0.0)
 			wg.Add(1)
 			time.Sleep(10 * time.Millisecond) // avoid rate limiting
 			if Async {

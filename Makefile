@@ -1,3 +1,7 @@
+macli:
+	cd iww; make
+	cd cmd/iww; make mac
+
 mac:
 	cd iww; make
 	cd cmd/iww; make mac
