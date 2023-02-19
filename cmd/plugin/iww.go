@@ -71,6 +71,7 @@ func GetAuthenticator() (core.Authenticator, error) {
 
 func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID string, args []string) {
 	var vpcid string
+	var crn string
 	app := &cli.App{
 		Name:  "iww",
 		Usage: "ibm cloud world wide operations on existing resources",
@@ -93,6 +94,10 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 						Aliases: []string{"ar"},
 						Usage:   "all regions not just the one configured (try: ibmcloud target)",
 					},
+					&cli.BoolFlag{
+						Name:  "verbose",
+						Usage: "fast as possible do not read resource specific attributes",
+					},
 					&cli.StringFlag{
 						Name:        "vpcid",
 						Aliases:     []string{"v"},
@@ -109,7 +114,7 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 					if c.Bool("all-regions") {
 						region = ""
 					}
-					return iww.LsWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID, vpcid, c.Bool("fast"))
+					return iww.LsWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID, vpcid, c.Bool("fast"), c.Bool("verbose"))
 				},
 			},
 			{
@@ -121,6 +126,16 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 						Aliases: []string{"ar"},
 						Usage:   "all regions not just the one configured (try: ibmcloud target)",
 					},
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Usage:   "fast as possible do not read resource specific attributes",
+						Aliases: []string{"v"},
+					},
+					&cli.BoolFlag{
+						Name:    "force",
+						Usage:   "do not prompt with y/n just assume y and rm resources",
+						Aliases: []string{"f"},
+					},
 					&cli.StringFlag{
 						Name:        "vpcid",
 						Aliases:     []string{"v"},
@@ -128,12 +143,19 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 						Required:    false,
 						Destination: &vpcid,
 					},
+					&cli.StringFlag{
+						Name:        "crn",
+						Aliases:     []string{"c"},
+						Usage:       "Delete on resource based on the crn",
+						Required:    false,
+						Destination: &crn,
+					},
 				},
 				Action: func(c *cli.Context) error {
 					if c.Bool("all-regions") {
 						region = ""
 					}
-					return iww.RmWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID, vpcid)
+					return iww.RmWithToken(token, accountID, region, resourceGroupName, resourceGroupGUID, vpcid, crn, c.Bool("force"), c.Bool("verbose"))
 				},
 			},
 		},

@@ -126,16 +126,18 @@ func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances
 
 	lenServiceInstances = len(serviceInstances)
 	assert.Greater(lenServiceInstances, 0)
-	Rm(apikey(), "", resourceGroupName(), "", "", true)
+	Rm(apikey(), "", resourceGroupName(), "", "", "", true, true)
 	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
 	assert.Len(serviceInstances, 0)
 	return lenServiceInstances
 }
 
-/*----------------
+/*
+----------------
 // Test the environment variables that contain spikey and resource group name
 // These tests work 9/2/2022
-----------------*/
+----------------
+*/
 func TestLs(t *testing.T) {
 	Ls(apikey(), "", "", "", false, true)
 }
@@ -148,9 +150,13 @@ func TestListWithDefaultApikeyGroupName(t *testing.T) {
 
 /*
 func TestRmWithDefaultApikeyGroupName(t *testing.T) {
-	Rm(apikey(), "", resourceGroupName(), "", "")
+	Rm(apikey(), "", resourceGroupName(), "", "", "crn:v1:bluemix:public:is:us-south:a/713c783d9a507a53135fe6793c37cc74::image", false, true)
 }
 */
+
+func TestRmWithDefaultApikeyCrn(t *testing.T) {
+	Rm(apikey(), "", "", "", "", "vpc crn:v1:bluemix:public:is:us-south:a/713c783d9a507a53135fe6793c37cc74::image:r006-1c19e164-b3b1-473f-aaed-bafa0d344ddb", false, true)
+}
 
 func TestListWithDefaultApikey(t *testing.T) {
 	assert := assert.New(t)

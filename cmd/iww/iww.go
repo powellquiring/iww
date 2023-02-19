@@ -12,6 +12,7 @@ func main() {
 	var apikey string
 	var resourceGroup string
 	var fileName string
+	var crn string
 	var region string
 	var vpcid string
 	app := &cli.App{
@@ -75,12 +76,24 @@ func main() {
 						Usage:   "fast as possible do not read resource specific attributes",
 						Aliases: []string{"v"},
 					},
+					&cli.BoolFlag{
+						Name:    "force",
+						Usage:   "do not prompt with y/n just assume y and rm resources",
+						Aliases: []string{"f"},
+					},
 					&cli.StringFlag{
 						Name:        "group",
 						Aliases:     []string{"g"},
 						Usage:       "resource group for resources",
 						Required:    false,
 						Destination: &resourceGroup,
+					},
+					&cli.StringFlag{
+						Name:        "crn",
+						Aliases:     []string{"c"},
+						Usage:       "Delete on resource based on the crn",
+						Required:    false,
+						Destination: &crn,
 					},
 					&cli.StringFlag{
 						Name:        "region",
@@ -104,7 +117,7 @@ func main() {
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return iww.Rm(apikey, region, resourceGroup, fileName, vpcid, c.Bool("verbose"))
+					return iww.Rm(apikey, region, resourceGroup, fileName, vpcid, crn, c.Bool("force"), c.Bool("verbose"))
 				},
 			},
 			{
