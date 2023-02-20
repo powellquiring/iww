@@ -82,8 +82,10 @@ func (spec VpcSpecificInstanceTemplateInstance) Get(service *vpcv1.VpcV1, id str
 		switch instance := _instance.(type) {
 		case *vpcv1.InstanceTemplate:
 			name = *instance.Name
+		/* todo
 		case *vpcv1.InstanceTemplateInstanceByVolume:
 			name = *instance.Name
+		*/
 		case *vpcv1.InstanceTemplateInstanceByImage:
 			name = *instance.Name
 		}
@@ -187,7 +189,7 @@ func (vpc *VpcGenericOperation) Vpcid() string {
 	return vpc.vpcid
 }
 
-//--------------------------------------
+// --------------------------------------
 // Some operations, like security group and acl, do not need to be deleted, deleting the vpc will auto delete them
 // And deleting the default will complain.
 type VpcGenericNoDeleteOperation struct {
@@ -216,7 +218,7 @@ func (noDelete *VpcGenericNoDeleteOperation) Vpcid() string {
 	return noDelete.operations.vpcid
 }
 
-//--------------------------------------
+// --------------------------------------
 // instance-groups need the membership count set to zero before deleting.
 type VpcGenericInstanceGroupOperation struct {
 	operations VpcGenericOperation
@@ -295,7 +297,7 @@ func (spec *VpcSpecificVPCInstanceWrapper) Get(service *vpcv1.VpcV1, id string) 
 	return name, id, found, response, err
 }
 
-//--------------------------------------
+// --------------------------------------
 func NewVpcOperations(crn *Crn) (ResourceInstanceOperations, error) {
 	if crn.resourceType != "is" {
 		return nil, errors.New("crn is not is: " + crn.vpcType)
@@ -340,7 +342,7 @@ type resourceInstanceWrapperErr struct {
 }
 
 // listInstanceTemplates appens onto list the list of instance templates
-//func listInstanceTemplates(list list.PersistentList, client *vpcv1.VpcV1, wg *sync.WaitGroup) {
+// func listInstanceTemplates(list list.PersistentList, client *vpcv1.VpcV1, wg *sync.WaitGroup) {
 func listInstanceTemplates(list *set.Set, client *vpcv1.VpcV1, wg *sync.WaitGroup) {
 	defer wg.Done()
 	lriOptions := client.NewListInstanceTemplatesOptions()

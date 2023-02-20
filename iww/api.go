@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/IBM/go-sdk-core/v5/core"
-	kp "github.com/IBM/keyprotect-go-client"
 	"github.com/IBM/networking-go-sdk/transitgatewayapisv1"
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
@@ -424,19 +423,6 @@ func (context *Context) getResourceManagerClient() (resourceManagerClient *resou
 
 func ApiEndpoint(documentedApiEndpoint string, region string) string {
 	return strings.Replace(documentedApiEndpoint, "<region>", region, 1)
-}
-
-func (context *Context) getKeyProtectClient(crn *Crn) (*kp.Client, error) {
-	region := crn.region
-	config := kp.ClientConfig{
-		BaseURL:       ApiEndpoint("https://<region>.kms.cloud.ibm.com", region),
-		APIKey:        context.apikey,
-		Authorization: context.token,
-		TokenURL:      kp.DefaultTokenURL,
-		InstanceID:    crn.id,
-		Verbose:       kp.VerboseFailOnly,
-	}
-	return kp.New(config, kp.DefaultTransport())
 }
 
 func (context *Context) getVpcClientFromRegion(region string) (service *vpcv1.VpcV1, err error) {
@@ -944,6 +930,6 @@ func TstServiceInstances(serviceInstances []*ResourceInstanceWrapper) error {
 }
 
 func Tag(apikey, resourceGroup string) error {
-	fmt.Println("tag", apikey, resourceGroup)
+	//fmt.Println("tag", apikey, resourceGroup)
 	return nil
 }
