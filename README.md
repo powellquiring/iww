@@ -5,7 +5,7 @@ The [latest](https://github.com/powellquiring/iww/releases/tag/latest) release a
 
 On a mac:
 ```
-ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-darwin-amd64-1.0.5
+ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-darwin-amd64-1.0.9
 ```
 ### Usage   
 Then to use the plugin see the help:
