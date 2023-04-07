@@ -138,7 +138,6 @@ func mainer(token, accountID, region, resourceGroupName, resourceGroupGUID strin
 					},
 					&cli.StringFlag{
 						Name:        "vpcid",
-						Aliases:     []string{"v"},
 						Usage:       "restrict resources to be from one vpc id",
 						Required:    false,
 						Destination: &vpcid,
@@ -190,7 +189,7 @@ func (p *IwwPlugin) GetMetadata() plugin.PluginMetadata {
 		Version: plugin.VersionType{
 			Major: 1,
 			Minor: 0,
-			Build: 8,
+			Build: 9,
 		},
 		Commands: []plugin.Command{
 			{

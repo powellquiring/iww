@@ -121,6 +121,13 @@ func main() {
 				},
 			},
 			{
+				Name:  "i",
+				Usage: "interactive",
+				Action: func(c *cli.Context) error {
+					return iww.Interactive(apikey)
+				},
+			},
+			{
 				Name:  "test",
 				Usage: "test existence of resources",
 				Flags: []cli.Flag{
