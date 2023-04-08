@@ -3,10 +3,29 @@ ibm cli with a world wide view of resources, list (ls), remove (rm)
 ## iww install
 The [latest](https://github.com/powellquiring/iww/releases/tag/latest) release are probably good.  They are versioned so look it up first and copy/paste.
 
+Install plugin into ibmcloud cli
+
+On a windows:
+```
+ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-windows-amd64
+```
 On a mac:
 ```
-ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-darwin-amd64-1.0.9
+ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-darwin-amd64
 ```
+On a mac M (arm):
+```
+ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-darwin-arm64
+```
+On a linux:
+```
+ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-linux-amd64
+```
+On a linux (arm):
+```
+ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-linux-arm64
+```
+
 ### Usage   
 Then to use the plugin see the help:
 

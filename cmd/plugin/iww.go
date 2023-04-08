@@ -189,7 +189,7 @@ func (p *IwwPlugin) GetMetadata() plugin.PluginMetadata {
 		Version: plugin.VersionType{
 			Major: 1,
 			Minor: 0,
-			Build: 9,
+			Build: 10,
 		},
 		Commands: []plugin.Command{
 			{
