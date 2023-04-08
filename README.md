@@ -1,9 +1,7 @@
 # iww
 ibm cli with a world wide view of resources, list (ls), remove (rm)
-## iww install
-The [latest](https://github.com/powellquiring/iww/releases/tag/latest) release are probably good.  They are versioned so look it up first and copy/paste.
-
-Install plugin into ibmcloud cli
+## iww plugin install
+The [latest](https://github.com/powellquiring/iww/releases/tag/latest) release are probably good copy/paste one of the strings below to install the plugin into ibmcloud cli
 
 On a windows:
 ```
@@ -25,6 +23,11 @@ On a linux (arm):
 ```
 ibmcloud plugin install https://github.com/powellquiring/iww/releases/download/latest/iww-plugin-linux-arm64
 ```
+
+## iww command install
+I personally use the command instead of the plugin.  Use `-h` to get the help the only difference is the `-apikey` parameter or APIKEY environment variable is required.  Open [releases](./releases) and download the appropriate executable without `plugin-` in the name.  You may need to reveal all assets to see yours.
+
+Open 
 
 ### Usage   
 Then to use the plugin see the help:
