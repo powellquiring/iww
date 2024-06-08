@@ -26,7 +26,7 @@ func xTestLs(t *testing.T) {
 
 }
 
-/*
+/*----------------------------------------------------
 
 func TestRmtmp(t *testing.T) {
 	resourceGroupName := "tmp"
@@ -131,4 +131,4 @@ func createVpcAndWait(assert *assert.Assertions, service *vpcv1.VpcV1, name stri
 	return nil
 }
 
-*/
+------------------------------------------*/

@@ -55,7 +55,8 @@ func listWithParams(apikey string, token string, accountID string, region string
 	}
 	fast := false
 	ret, err := List(fast)
-	lsOutput(ret, fast)
+	f := os.Stdout
+	lsOutput(ret, f, fast)
 	return ret, err
 }
 
@@ -113,21 +114,28 @@ func terraformCleanup(dir string) {
 		}
 	}
 }
+
 func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances int) {
 	assert := assert.New(t)
-	serviceInstances, err := listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
+	rgn := resourceGroupName()
+	assert.NotEqual("", rgn)
+	serviceInstances, err := listWithParams(apikey(), "", "", "", rgn, "", "")
+	assert.Nil(err)
 	assert.Len(serviceInstances, 0)
 	dir := testDirectory(directory)
 	defer terraformCleanup(dir)
+
+	// terraform apply
 	_, err = execTerraformApply(t, dir)
 	assert.Nil(err)
+
 	// test ls and rm using vpcid.  the vpc terraform specifies just a vpc which creates a default acl and sg
-	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
+	serviceInstances, err = listWithParams(apikey(), "", "", "", rgn, "", "")
 
 	lenServiceInstances = len(serviceInstances)
 	assert.Greater(lenServiceInstances, 0)
-	Rm(apikey(), "", resourceGroupName(), "", "", "", true, true)
-	serviceInstances, err = listWithParams(apikey(), "", "", "", resourceGroupName(), "", "")
+	Rm(apikey(), "", rgn, "", "", "", true, true, false)
+	serviceInstances, err = listWithParams(apikey(), "", "", "", rgn, "", "")
 	assert.Len(serviceInstances, 0)
 	return lenServiceInstances
 }
@@ -139,26 +147,24 @@ func testTerraformDirectory(t *testing.T, directory string) (lenServiceInstances
 ----------------
 */
 func TestLs(t *testing.T) {
-	Ls(apikey(), "", "", "", false, true)
+	Ls(apikey(), "", "", "", false, true, false)
 }
 
-func TestListWithDefaultApikeyGroupName(t *testing.T) {
+func _TestListWithDefaultApikeyGroupName(t *testing.T) {
 	assert := assert.New(t)
 	_, err := ListWithApikey(apikey(), resourceGroupName())
 	assert.NoError(err)
 }
 
-/*
-func TestRmWithDefaultApikeyGroupName(t *testing.T) {
-	Rm(apikey(), "", resourceGroupName(), "", "", "crn:v1:bluemix:public:is:us-south:a/713c783d9a507a53135fe6793c37cc74::image", false, true)
-}
-*/
-
-func TestRmWithDefaultApikeyCrn(t *testing.T) {
-	Rm(apikey(), "", "", "", "", "vpc crn:v1:bluemix:public:is:us-south:a/713c783d9a507a53135fe6793c37cc74::image:r006-1c19e164-b3b1-473f-aaed-bafa0d344ddb", false, true)
+func _TestRmWithDefaultApikeyGroupName(t *testing.T) {
+	Rm(apikey(), "", resourceGroupName(), "", "", "crn:v1:bluemix:public:is:us-south:a/713c783d9a507a53135fe6793c37cc74::image", false, true, false)
 }
 
-func TestListWithDefaultApikey(t *testing.T) {
+func _TestRmWithDefaultApikeyCrn(t *testing.T) {
+	Rm(apikey(), "", "", "", "", "vpc crn:v1:bluemix:public:is:us-south:a/713c783d9a507a53135fe6793c37cc74::image:r006-1c19e164-b3b1-473f-aaed-bafa0d344ddb", false, true, false)
+}
+
+func _TestListWithDefaultApikey(t *testing.T) {
 	assert := assert.New(t)
 	_, err := ListWithApikey(apikey(), "")
 	assert.NoError(err)

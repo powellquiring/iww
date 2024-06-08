@@ -9,7 +9,7 @@ import (
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 )
 
-//------------------------------------
+// ------------------------------------
 // Global variable initialization section
 func (context *Context) getResourceControllerClient() (client *resourcecontrollerv2.ResourceControllerV2, err error) {
 	return resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
@@ -189,7 +189,7 @@ func readResourceKeys(resourceControllerClient *resourcecontrollerv2.ResourceCon
 	return wrappedResourceInstances, lastErr
 }
 
-//--------------------------------------
+// --------------------------------------
 type ResourceKeyOperations struct {
 	getResult   *resourcecontrollerv2.ResourceKey
 	getResponse *core.DetailedResponse

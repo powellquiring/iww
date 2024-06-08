@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,7 @@ type Key struct {
 }
 
 const Verbose = true
+const saveFile = "/tmp/ls.txt"
 
 func pbar(max int64, description ...string) *progressbar.ProgressBar {
 	if Verbose {
@@ -619,7 +621,7 @@ func List(fast bool) ([]*ResourceInstanceWrapper, error) {
 			fetchedRis[index] = ri
 			// context.progressBarWrapper.progress(0.0)
 			wg.Add(1)
-			time.Sleep(10 * time.Millisecond) // avoid rate limiting
+			time.Sleep(100 * time.Millisecond) // avoid rate limiting
 			if Async {
 				go fetchStoreResults(ri, &wg)
 			} else {
@@ -665,16 +667,16 @@ func NewSubInstance(parent *ResourceInstanceWrapper, subType, id string, name *s
 }
 
 // ls with apikey from iww command line
-func Ls(apikey, region string, resourceGroupName string, vpcid string, fast bool, verbose bool) error {
-	return LsCommon(apikey, "", "", region, resourceGroupName, "", vpcid, fast, verbose)
+func Ls(apikey, region string, resourceGroupName string, vpcid string, fast bool, verbose, save bool) error {
+	return LsCommon(apikey, "", "", region, resourceGroupName, "", vpcid, fast, verbose, save)
 }
 
 // ls with context manager from ibmcloud cli
 func LsWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool, verbose bool) error {
-	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, fast, verbose)
+	return LsCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, fast, verbose, false)
 }
 
-func LsCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool, verbose bool) error {
+func LsCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, fast bool, verbose, save bool) error {
 	if vpcid != "" {
 		if fast {
 			return errors.New("fast and vpcid are not compatible")
@@ -688,10 +690,27 @@ func LsCommon(apikey string, token string, accountID string, region string, reso
 	if err != nil {
 		return err
 	}
-	return lsOutput(wrappedResourceInstances, fast)
+	f := os.Stdout
+
+	if save {
+		var err error
+		f, err = os.OpenFile(saveFile, os.O_WRONLY|os.O_CREATE, 0666)
+		if err != nil {
+			log.Fatal("create file failed:", saveFile, err)
+		}
+		err = f.Truncate(0)
+		if err != nil {
+			log.Fatal("truncate file failed:", saveFile, err)
+		}
+		_, err = f.Seek(0, 0)
+		if err != nil {
+			log.Fatal("seek file failed:", saveFile, err)
+		}
+	}
+	return lsOutput(wrappedResourceInstances, f, fast)
 }
 
-func lsOutput(wrappedResourceInstances []*ResourceInstanceWrapper, fast bool) error {
+func lsOutput(wrappedResourceInstances []*ResourceInstanceWrapper, f *os.File, fast bool) error {
 	context := MustGlobalContext()
 	unimplementedResourceInstances := make([]*ResourceInstanceWrapper, 0)
 	missingResourceInstances := make([]*ResourceInstanceWrapper, 0)
@@ -713,15 +732,15 @@ func lsOutput(wrappedResourceInstances []*ResourceInstanceWrapper, fast bool) er
 		}
 	}
 	if len(unimplementedResourceInstances) > 0 {
-		fmt.Println("#Unimplemented resource instances")
-		PrintResourceInstances(context, fast, unimplementedResourceInstances)
+		fmt.Fprintln(f, "#Unimplemented resource instances")
+		PrintResourceInstances(context, f, fast, unimplementedResourceInstances)
 	}
 	if len(missingResourceInstances) > 0 {
-		fmt.Println("#Missing resource instances")
-		PrintResourceInstances(context, fast, missingResourceInstances)
+		fmt.Fprintln(f, "#Missing resource instances")
+		PrintResourceInstances(context, f, fast, missingResourceInstances)
 	}
-	fmt.Println("#Resource instances")
-	PrintResourceInstances(context, fast, existingResourceInstances)
+	fmt.Fprintln(f, "#Resource instances")
+	PrintResourceInstances(context, f, fast, existingResourceInstances)
 	return nil
 }
 
@@ -731,7 +750,7 @@ func (ris RIWs) Len() int           { return len(ris) }
 func (ris RIWs) Swap(i, j int)      { ris[i], ris[j] = ris[j], ris[i] }
 func (ris RIWs) Less(i, j int) bool { return ris[i].crn.Crn < ris[j].crn.Crn }
 
-func PrintResourceInstances(context *Context, fast bool, wrappedResourceInstances []*ResourceInstanceWrapper) {
+func PrintResourceInstances(context *Context, f *os.File, fast bool, wrappedResourceInstances []*ResourceInstanceWrapper) {
 	// Sort the instance by resource group
 	// byResourceGroup := make(map[string][]*ResourceInstanceWrapper)
 	byResourceGroup := make(map[string]RIWs)
@@ -751,9 +770,9 @@ func PrintResourceInstances(context *Context, fast bool, wrappedResourceInstance
 		ris := byResourceGroup[groupId]
 		sort.Sort(ris)
 
-		fmt.Println("#", groupId, "(", context.getResourceGroupName(groupId, fast), ")")
+		fmt.Fprintln(f, "#", groupId, "(", context.getResourceGroupName(groupId, fast), ")")
 		for _, ri := range ris {
-			fmt.Println(ri.FormatInstance(fast))
+			fmt.Fprintln(f, ri.FormatInstance(fast))
 		}
 	}
 }
@@ -829,46 +848,96 @@ func pruneResourcesThatDoNotExist(nextServiceInstances []*ResourceInstanceWrappe
 	return ret
 }
 
-func Rm(apikey, region string, resourceGroupName string, fileName string, vpcid string, crn string, force bool, verbose bool) error {
+func Rm(apikey, region string, resourceGroupName string, fileName string, vpcid string, crn string, force bool, verbose, save bool) error {
 	if fileName != "" {
 		log.Print("rm from file not supported, fileName:", fileName)
 		return nil
 	}
-	return RmCommon(apikey, "", "", region, resourceGroupName, "", vpcid, crn, force, verbose)
+	return RmCommon(apikey, "", "", region, resourceGroupName, "", vpcid, crn, force, verbose, save)
 }
 
 func RmWithToken(token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, crn string, force bool, verbose bool) error {
-	return RmCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, crn, force, verbose)
+	return RmCommon("", token, accountID, region, resourceGroupName, resourceGroupID, vpcid, crn, force, verbose, false)
 }
 
-func RmCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, crn string, force bool, verbose bool) error {
+func crnsFromFile(fileName string) ([]string, error) {
+	readFile, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+	defer readFile.Close()
+
+	ret := make([]string, 0)
+	fileScanner := bufio.NewScanner(readFile)
+	fileScanner.Split(bufio.ScanLines)
+
+	commentM := regexp.MustCompile(`\s*#.*`)             // comment line
+	crnM := regexp.MustCompile(`.* (crn:.*:.*:[^ ]*).*`) // crn in a line
+	for fileScanner.Scan() {
+		fmt.Println(fileScanner.Text())
+		s := fileScanner.Text()
+		// ignore comments
+		c := commentM.FindStringSubmatch(s)
+		if len(c) != 0 {
+			continue
+		}
+		m := crnM.FindStringSubmatch(s)
+		if len(m) == 2 {
+			crn := m[1]
+			ret = append(ret, crn)
+		}
+	}
+	return ret, nil
+}
+func parameterServiceInstances(serviceInstances []*ResourceInstanceWrapper, save bool, crn string) ([]*ResourceInstanceWrapper, error) {
+	// cut down the service instances to just contain those instances from a file or --crn switch
+	if save || crn != "" {
+		var crnSi *ResourceInstanceWrapper
+		crnServiceInstances := make([]*ResourceInstanceWrapper, 0)
+		var crns []string
+		if crn != "" {
+			crns = []string{crn}
+		} else {
+			var err2 error
+			crns, err2 = crnsFromFile(saveFile)
+			if err2 != nil {
+				log.Fatal("crns from file failed failed:", saveFile, err2)
+				return nil, err2
+			}
+		}
+		for _, crn := range crns {
+			crnSi = nil
+			for _, si := range serviceInstances {
+				if si.crn.Crn == crn {
+					crnSi = si
+					break
+				}
+			}
+			if crnSi == nil {
+				fmt.Println("crn not found, crn:", crn)
+			} else {
+				crnServiceInstances = append(crnServiceInstances, crnSi)
+			}
+		}
+		serviceInstances = crnServiceInstances
+	}
+	return serviceInstances, nil
+}
+
+func RmCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, crn string, force bool, verbose, save bool) error {
 	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid, verbose); err != nil { // todo
 		return err
 	}
-	if resourceGroupName == "" && resourceGroupID == "" && vpcid == "" && crn == "" {
-		fmt.Print("Removing all resources not currently supported, select a resource group, vpc or crn")
-		return nil
-	}
+
 	serviceInstances, err := List(false)
 	if err != nil {
 		return err
 	}
 
-	var crnSi *ResourceInstanceWrapper
-	if crn != "" {
-		for _, si := range serviceInstances {
-			if si.crn.Crn == crn {
-				crnSi = si
-				serviceInstances = []*ResourceInstanceWrapper{crnSi}
-			}
-		}
-		if crnSi == nil {
-			fmt.Println("crn not found, crn:", crn)
-			return nil
-		}
-	}
+	// filter the list of service instanes to intersect with the ones passed by params
+	serviceInstances, err = parameterServiceInstances(serviceInstances, save, crn)
 
-	lsOutput(serviceInstances, false)
+	lsOutput(serviceInstances, os.Stdout, false)
 	if !force {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Remove these resources? Y/n: ")
@@ -931,5 +1000,43 @@ func TstServiceInstances(serviceInstances []*ResourceInstanceWrapper) error {
 
 func Tag(apikey, resourceGroup string) error {
 	//fmt.Println("tag", apikey, resourceGroup)
+	region := ""
+	resourceGroupName := ""
+	vpcid := ""
+	crn := ""
+	force := false
+	verbose := false
+	save := true
+	return TagCommon(apikey, "", "", region, resourceGroupName, "", vpcid, crn, force, verbose, save)
+}
+
+func TagCommon(apikey string, token string, accountID string, region string, resourceGroupName string, resourceGroupID string, vpcid string, crn string, force bool, verbose, save bool) error {
+	if err := SetGlobalContext(apikey, token, accountID, region, resourceGroupName, resourceGroupID, vpcid, verbose); err != nil { // todo
+		return err
+	}
+
+	serviceInstances, err := List(false)
+	if err != nil {
+		return err
+	}
+
+	// filter the list of service instanes to intersect with the ones passed by params
+	serviceInstances, err = parameterServiceInstances(serviceInstances, save, crn)
+
+	lsOutput(serviceInstances, os.Stdout, false)
+	if !force {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("Remove these resources? Y/n: ")
+		text, _ := reader.ReadString('\n')
+		text = strings.ToLower(strings.TrimSpace(text))
+		fmt.Println(text)
+		force = len(text) == 0 || strings.HasPrefix(text, "y")
+	}
+
+	if !force {
+		return nil
+	}
+
+	RmServiceInstances(serviceInstances)
 	return nil
 }

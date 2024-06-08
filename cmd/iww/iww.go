@@ -21,7 +21,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:        "apikey",
-				Usage:       "apikey key to access resources",
+				Usage:       "apikey key to access resources, or use environment var",
 				Required:    true,
 				Destination: &apikey,
 				EnvVars:     []string{"APIKEY"},
@@ -30,7 +30,7 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:  "ls",
-				Usage: "list matching resources",
+				Usage: "list matching resources in the ibm cloud.  API key required.  No options to list all.  Consider trying -s to save to temp file, edit temp file leaving what needs to be removed then iww rm -s to remove them",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:  "fast",
@@ -40,6 +40,11 @@ func main() {
 						Name:    "verbose",
 						Usage:   "fast as possible do not read resource specific attributes",
 						Aliases: []string{"v"},
+					},
+					&cli.BoolFlag{
+						Name:    "save",
+						Usage:   "save in the file /tmp/ls.txt",
+						Aliases: []string{"s"},
 					},
 					&cli.StringFlag{
 						Name:        "group",
@@ -64,7 +69,7 @@ func main() {
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return iww.Ls(apikey, region, resourceGroup, vpcid, c.Bool("fast"), c.Bool("verbose"))
+					return iww.Ls(apikey, region, resourceGroup, vpcid, c.Bool("fast"), c.Bool("verbose"), c.Bool("save"))
 				},
 			},
 			{
@@ -80,6 +85,11 @@ func main() {
 						Name:    "force",
 						Usage:   "do not prompt with y/n just assume y and rm resources",
 						Aliases: []string{"f"},
+					},
+					&cli.BoolFlag{
+						Name:    "save",
+						Usage:   "only consider crns from a saved file, see ls --save",
+						Aliases: []string{"s"},
 					},
 					&cli.StringFlag{
 						Name:        "group",
@@ -117,12 +127,12 @@ func main() {
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return iww.Rm(apikey, region, resourceGroup, fileName, vpcid, crn, c.Bool("force"), c.Bool("verbose"))
+					return iww.Rm(apikey, region, resourceGroup, fileName, vpcid, crn, c.Bool("force"), c.Bool("verbose"), c.Bool("save"))
 				},
 			},
 			{
 				Name:  "i",
-				Usage: "interactive",
+				Usage: "interactive - not working yet",
 				Action: func(c *cli.Context) error {
 					return iww.Interactive(apikey)
 				},
@@ -158,7 +168,7 @@ func main() {
 			},
 			{
 				Name:  "tag",
-				Usage: "tag matching resources",
+				Usage: "tag matching resources - not working yet",
 				Action: func(c *cli.Context) error {
 					return iww.Tag(apikey, c.Args().First())
 				},
